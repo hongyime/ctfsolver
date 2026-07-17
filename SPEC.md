@@ -61,6 +61,12 @@ Target shape:
 - Missing agent auth must be visible during setup, in the dashboard sidebar, and in agent run errors.
 - Non-CTFd challenges must go through the MCP backend server, not a dashboard manual challenge form.
 - User-facing docs should call the unified product `ctfsolver`; distinguish only `CTFd mode` and `non-CTFd mode`.
+- Backend reliability must be provable by a local doctor command and automated MCP smoke checks.
+- Backend inventory must be represented by a generated manifest so future merges can prove no tools disappeared.
+- Backend tool results should converge on structured records with command, exit status, outputs, artifacts, findings, warnings, and next steps.
+- Network-capable tools must have an explicit target scope model before broader autonomous use.
+- Non-CTFd mode should expose challenge state, files, findings, playbooks, and reusable workflows through MCP-native tools/resources/prompts where supported.
+- New tool packs should be added only with registry coverage, Docker image coverage, and a test or probe that proves the expected binary is available.
 
 ## T
 
@@ -81,6 +87,51 @@ Target shape:
 | T13 | x | Document `ctfsolver` mode names and backend MCP usage. |
 | T14 | x | Document non-CTFd MCP setup steps and prompt examples for future users. |
 | T15 | x | Add per-clone MCP config generation and missing-auth guidance. |
+| T16 | x | Add `ctfsolver doctor` checks for Python, uv, Docker, MCP import, registry, images, auth, env, paths, and workspace permissions. |
+| T17 | ~ | Add backend MCP smoke tests for tool listing, health checks, environment checks, challenge creation, challenge status, and one safe offline file tool. |
+| T18 | x | Add a generated preservation manifest for MCP tools, registry tools, skill docs, Dockerfiles, schemas, launchers, and copied toolkit assets. |
+| T19 | ~ | Add a structured tool result schema and migrate high-value backend paths toward consistent JSON output. |
+| T20 | ~ | Add evidence logging for commands, targets, file hashes, results, timestamps, container images, and challenge IDs. |
+| T21 | x | Add target scope tools and scope enforcement for network-capable backend tools. |
+| T22 | ~ | Harden workspace file path handling for traversal, Windows normalization, and artifact ingestion safety. |
+| T23 | . | Add Docker image status matrix with build state, expected binaries, image digests, and stale/missing markers. |
+| T24 | . | Add CI verification for tests, lock checks, dependency checks, secret scan, imports, and non-Docker MCP smoke checks. |
+| T25 | x | Add `suggest_next_tools` MCP workflow routing from description, files, target, category, and prior findings. |
+| T26 | x | Add `triage_artifact` to hash files, detect type, run safe first-pass checks, record findings, and recommend next steps. |
+| T27 | . | Add case/session workflow tools for list, active selection, attach artifact, notes, solved status, and export. |
+| T28 | ~ | Expose MCP resources for challenge files, notes, findings, logs, playbooks, and writeups. |
+| T29 | x | Expose MCP prompts for web, pwn, reverse engineering, crypto, forensics, OSINT, mobile, and cloud workflows. |
+| T30 | . | Upgrade playbooks to scored workflows with prerequisites, expected artifacts, failure handling, and branching next actions. |
+| T31 | . | Add agent memory summaries per challenge with attempts, findings, failures, important files, and hypotheses. |
+| T32 | . | Add final writeup generation from evidence, notes, commands, artifacts, and final flag. |
+| T33 | . | Add orchestrated web recon workflow from fingerprinting through directories, params, nuclei-lite, and summary. |
+| T34 | . | Improve Nuclei support with template status/update, signed-template awareness, severity filtering, rate limits, and scope enforcement. |
+| T35 | . | Add crawler support for endpoint discovery before fuzzing. |
+| T36 | . | Add dedicated XSS discovery support. |
+| T37 | . | Add parameter discovery support. |
+| T38 | . | Add secret leak checks for downloaded source, exposed git data, backups, and repo-style challenges. |
+| T39 | . | Add API testing helpers for OpenAPI, JWT, GraphQL, auth, and session checks. |
+| T40 | . | Add mobile and managed-code reverse engineering tools and wrappers. |
+| T41 | . | Improve Ghidra automation for strings, decompile, call graph, suspicious imports, and batch summaries. |
+| T42 | . | Improve pwn workflow with exploit templates, libc resolver flow, multiarch support, and debugger helpers. |
+| T43 | . | Add crypto solver templates for RSA, LCG, MT19937, XOR, hash length extension, lattice, AES mode bugs, and padding mistakes. |
+| T44 | . | Add number theory tooling for factoring-heavy crypto challenges. |
+| T45 | . | Improve forensics coverage for network, document, archive, carving, and disk recovery challenges. |
+| T46 | . | Add PCAP triage workflow with protocol summary, extracted files, credentials, objects, DNS anomalies, USB HID, and timeline. |
+| T47 | . | Add stego workflow chaining metadata, strings, carving, image/audio stego, and spectrogram analysis. |
+| T48 | x | Improve `setup_mcp.bat` to run doctor, generate config, show auth guidance, and print MCP client config paths. |
+| T49 | x | Add backend launcher flags for doctor and smoke checks. |
+| T50 | x | Add README quick paths for CTFd mode and non-CTFd MCP mode. |
+| T51 | . | Add safe local example challenges for web, reverse engineering, crypto, pwn, and forensics testing. |
+| T52 | x | Add MCP Inspector documentation for validating the backend server. |
+| T53 | x | Add troubleshooting docs for Docker, auth, images, Windows paths, OneDrive, MCP launch, and scope blocks. |
+| T54 | . | Add golden-output tests for artifact triage, crypto helpers, forensics helpers, and reverse engineering helpers. |
+| T55 | . | Add health probes proving each registry binary exists in its Docker image. |
+| T56 | . | Add timeout, truncation, artifact preservation, and cancellation policy for backend tools. |
+| T57 | . | Add update command for images, templates, exploit-db, wordlists, and local metadata. |
+| T58 | . | Add optional localhost HTTP MCP transport for multi-client workflows while keeping stdio default. |
+| T59 | . | Add plugin-style optional tool packs for mobile, cloud, malware, GPU cracking, and OSINT. |
+| T60 | . | Add benchmark challenges to measure whether agents can solve known local tasks through the backend. |
 
 ## B
 

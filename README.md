@@ -96,6 +96,17 @@ start_backend.bat
 Smoke-tests the backend MCP server from `src/ctf_core`. Most MCP clients should start the backend themselves from their MCP config instead of you double-clicking this file.
 
 ```bat
+start_backend.bat --doctor
+```
+Runs local readiness checks for Python, `uv`, Docker, MCP imports, registry count, workspace permissions, MCP config files, and Claude/Codex auth.
+
+```bat
+start_backend.bat --smoke
+```
+Runs the lightweight non-Docker backend smoke test. This checks MCP tool inventory, registry inventory, and a temporary non-CTFd challenge workspace round trip.
+It also triages a small local artifact to prove the safe offline file-analysis path works.
+
+```bat
 start_full.bat
 ```
 Starts the CTFd dashboard with backend paths/env wired to this repo.
@@ -137,7 +148,19 @@ Generic setup:
 2. Add the `ctfsolver` server config above.
 3. Restart the AI app or reload MCP servers.
 4. Confirm the `ctfsolver` tools appear in the client.
-5. Ask the client to use `ctfsolver` on your local challenge files or target.
+5. Set target scope before network scans with `set_target_scope`.
+6. Ask the client to use `ctfsolver` on your local challenge files or target.
+
+Recommended non-CTFd flow:
+
+1. Run `setup_mcp.bat`.
+2. Run `start_backend.bat --doctor`.
+3. Run `start_backend.bat --smoke`.
+4. Add the generated `mcp.local.json` server config to your AI IDE/CLI.
+5. In the MCP client, call `create_challenge`.
+6. For files, call `triage_artifact` first, then `suggest_next_tools`.
+7. For network targets, call `set_target_scope` before `run_nmap`, `run_ffuf`, `run_nuclei`, `run_sqlmap`, SpiderFoot, or theHarvester.
+8. Record important results with `record_challenge_finding`.
 
 Prompt examples:
 
@@ -153,6 +176,14 @@ Use ctfsolver to run file, exiftool, binwalk, and strings against ./challenge.bi
 Use ctfsolver web tools against http://127.0.0.1:8080. Stay scoped to this CTF target.
 ```
 
+Useful MCP tools for non-CTFd mode:
+
+- `run_backend_smoke`: prove backend inventory and workspace creation.
+- `set_target_scope`, `get_target_scope`, `check_target_scope`: control authorized network targets.
+- `suggest_next_tools`: rank the next likely tools from description, files, target, and findings.
+- `triage_artifact`: hash a file, infer type/category, sample strings safely, log evidence, and recommend next tools.
+- `ctfsolver://inventory`, `ctfsolver://playbooks`, `ctfsolver://skills`: read-only MCP resources for client context.
+
 Common MCP client locations vary by app:
 
 - Claude Desktop / Claude Code: add the `mcpServers` block to the app's MCP config.
@@ -166,6 +197,15 @@ Backend state is kept here:
 - `workspace/`
 - `ctf_state.db`
 - `logs/`
+
+### MCP Inspector
+You can validate the backend with the MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector uv --directory "X:\01 REPOSITORIES\ctfsolver" run python -m ctf_core.server
+```
+
+Use the generated path from `mcp.local.json` on other machines. The Inspector should show the `ctfsolver` tools, prompts, and resources.
 
 ### Running the Dashboard
 To boot the Streamlit application, execute the following from the root directory:
@@ -181,5 +221,25 @@ uv run pytest -v
 ```
 If you encounter `ModuleNotFoundError` during tests, ensure `pyproject.toml` has `pythonpath = ["src"]` defined in its `pytest.ini_options` block (which is enabled by default).
 
+Additional backend verification:
+
+```bash
+uv run python scripts/doctor.py --no-images
+uv run python scripts/mcp_smoke.py --json
+uv run python scripts/generate_manifest.py --write
+uv lock --check
+uv pip check
+uv run pip-audit
+```
+
 ### Absorbed Toolkit
-The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active preservation test checks 71 MCP tools, 60 registry tools, 33 skill docs, 6 Dockerfiles, and 2 schema files.
+The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active manifest currently tracks 77 MCP tools, 60 registry tools, 33 skill docs, 7 Dockerfile entries, and 2 schema files.
+
+Troubleshooting:
+
+- Docker missing or stopped: run Docker Desktop, then `start_backend.bat --doctor`.
+- Auth missing: sign in with Claude/Codex locally or set API keys in `.env`; rerun `setup_mcp.bat`.
+- MCP client cannot launch: regenerate `mcp.local.json` and paste that exact config into the client.
+- Backend appears hung: stdio MCP servers wait for JSON-RPC on stdin; validate with MCP Inspector or `start_backend.bat --smoke`.
+- Network scan blocked: call `set_target_scope` with the authorized CTF host, URL, IP, or CIDR first.
+- Windows path problem: use absolute paths in `mcp.local.json`, and keep challenge files outside OneDrive when Docker needs to mount them.

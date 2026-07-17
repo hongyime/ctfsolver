@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -85,6 +86,63 @@ db: Optional[CTFDatabase] = None
 docker_runner: Optional[DockerRunner] = None
 mode_controller: ModeController = ModeController()
 _flag_detector: FlagPatternDetector = FlagPatternDetector()  # P4-009: shared singleton (no per-call regex recompile)
+
+
+def _workspace_root() -> Path:
+    from .docker_runner import WORKSPACE_PATH as _WORKSPACE_PATH
+
+    return Path(_WORKSPACE_PATH)
+
+
+def _scope_block_message(target: str) -> str:
+    return (
+        f"Target out of scope: {target}\n"
+        "Use set_target_scope with the authorized host, URL, IP, or CIDR before "
+        "running network-capable tools."
+    )
+
+
+def _is_target_in_scope(target: str) -> bool:
+    from .scope import is_target_allowed
+
+    return is_target_allowed(target, workspace=_workspace_root())
+
+
+def _extract_network_target(tool: str, args: list[str]) -> str:
+    """Best-effort target extraction for generic network scan jobs."""
+    name = tool.lower()
+    if name in {"feroxbuster", "ffuf", "sqlmap", "nuclei", "nikto", "whatweb"}:
+        for flag in ("-u", "--url", "-target", "-target-url"):
+            if flag in args:
+                idx = args.index(flag)
+                if idx + 1 < len(args):
+                    return args[idx + 1]
+    if name in {"gobuster", "wfuzz"} and "-u" in args:
+        idx = args.index("-u")
+        if idx + 1 < len(args):
+            return args[idx + 1]
+    if name in {"nmap", "masscan", "httpx", "hydra"} and args:
+        for item in reversed(args):
+            if item and not item.startswith("-"):
+                return item
+    return ""
+
+
+def _split_user_list(value: str) -> list[str]:
+    return [item.strip() for item in re.split(r"[\n,]+", value or "") if item.strip()]
+
+
+def _resolve_workspace_file(path: str) -> Path:
+    """Resolve a user-supplied artifact path with workspace-relative safety."""
+    raw = Path(path)
+    if raw.is_absolute():
+        return raw
+
+    root = _workspace_root().resolve()
+    resolved = (root / raw).resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f"path escapes workspace: {path}")
+    return resolved
 
 
 def validate_environment() -> tuple[bool, list[str]]:
@@ -180,6 +238,9 @@ async def run_nmap(target: str, flags: str = "-sV -sC", format: str = "text") ->
         Formatted scan results summary
     """
     global db, docker_runner
+
+    if not _is_target_in_scope(target):
+        return _scope_block_message(target)
     
     if docker_runner is None:
         docker_runner = DockerRunner()
@@ -250,6 +311,9 @@ async def run_searchsploit(query: str, format: str = "text") -> str:
         Formatted exploit search results
     """
     global db, docker_runner
+
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
     
     if docker_runner is None:
         docker_runner = DockerRunner()
@@ -373,6 +437,9 @@ async def run_sqlmap(url: str, options: str = "--batch --dbs", format: str = "te
         Formatted SQL injection results
     """
     global docker_runner
+
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
     
     if docker_runner is None:
         docker_runner = DockerRunner()
@@ -662,6 +729,126 @@ async def check_environment() -> str:
 
 
 @mcp.tool(structured_output=False)
+async def run_backend_smoke(format: str = "text") -> str:
+    """Run lightweight non-Docker backend smoke checks for MCP mode."""
+    from .smoke import run_smoke
+
+    report = await run_smoke()
+    if format.lower() == "json":
+        return json.dumps(report.to_dict(), indent=2, sort_keys=True)
+    return report.to_text()
+
+
+@mcp.tool(structured_output=False)
+async def set_target_scope(targets: str, notes: str = "") -> str:
+    """Set authorized network targets for non-CTFd backend tools.
+
+    Pass targets as comma-separated or newline-separated hosts, URLs, IPs, or CIDRs.
+    Network-capable tools refuse targets not covered by this scope.
+    """
+    from .scope import save_allowed_targets
+
+    raw_targets = [
+        item.strip()
+        for item in re.split(r"[\n,]+", targets or "")
+        if item.strip()
+    ]
+    if not raw_targets:
+        return "Error: provide at least one authorized target."
+    state = save_allowed_targets(
+        _workspace_root(),
+        raw_targets,
+        metadata={"notes": notes} if notes else {},
+    )
+    return json.dumps(state, indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def get_target_scope() -> str:
+    """Return the current authorized network target scope."""
+    from .scope import load_scope
+
+    return json.dumps(load_scope(_workspace_root()), indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def check_target_scope(target: str) -> str:
+    """Check whether a target is covered by the current network scope."""
+    from .scope import normalize_target
+
+    allowed = _is_target_in_scope(target)
+    return json.dumps(
+        {
+            "target": target,
+            "normalized_target": normalize_target(target),
+            "allowed": allowed,
+            "message": "target is in scope" if allowed else _scope_block_message(target),
+        },
+        indent=2,
+        sort_keys=True,
+    )
+
+
+@mcp.tool(structured_output=False)
+async def suggest_next_tools(
+    description: str = "",
+    category: str = "",
+    target: str = "",
+    files: str = "",
+    findings: str = "",
+    limit: int = 10,
+) -> str:
+    """Recommend ranked next MCP tools for a CTF challenge state."""
+    from .workflows import suggest_next_tools as _suggest
+
+    recommendations = _suggest(
+        description=description,
+        category=category,
+        target=target,
+        files=_split_user_list(files),
+        findings=_split_user_list(findings),
+        limit=limit,
+    )
+    return json.dumps(recommendations, indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def triage_artifact(path: str, challenge_id: str = "") -> str:
+    """Safely hash and summarize an artifact, then recommend next tools."""
+    from .artifact_triage import triage_artifact as _triage
+    from .evidence import append_evidence_event
+
+    try:
+        resolved = _resolve_workspace_file(path)
+        result = _triage(resolved)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+    append_evidence_event(
+        _workspace_root(),
+        "artifact_triaged",
+        challenge_id=challenge_id or None,
+        files=[resolved],
+        file_hashes=[
+            {
+                "path": result["path"],
+                "sha256": result["sha256"],
+                "size": result["size"],
+            }
+        ],
+        artifacts=[result["path"]],
+        metadata={
+            "category_hint": result.get("category_hint"),
+            "type_hints": result.get("type_hints", []),
+            "recommended_tools": [
+                item.get("tool") for item in result.get("recommended_next_tools", [])
+            ],
+        },
+    )
+    return json.dumps(result, indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
 async def build_images() -> str:
     """
     Build (or rebuild) every Docker image required by the CTF Toolkit.
@@ -889,6 +1076,8 @@ async def run_spiderfoot(target: str) -> str:
         Formatted OSINT scan results
     """
     global docker_runner
+    if not _is_target_in_scope(target):
+        return _scope_block_message(target)
     if docker_runner is None:
         docker_runner = DockerRunner()
     from .utils.osint_tools import SpiderFootClient
@@ -909,6 +1098,8 @@ async def run_harvester(domain: str) -> str:
         Formatted enumeration results
     """
     global docker_runner
+    if not _is_target_in_scope(domain):
+        return _scope_block_message(domain)
     if docker_runner is None:
         docker_runner = DockerRunner()
     from .utils.osint_tools import TheHarvesterClient
@@ -1105,12 +1296,26 @@ async def start_scan(tool: str, args: str = "", timeout: int = 600, durable: boo
     """
     global db, docker_runner
     import uuid
+    job_id = uuid.uuid4().hex[:12]
+    arglist = args.split()
+    network_tools = {
+        "feroxbuster", "ffuf", "gobuster", "httpx", "hydra", "masscan",
+        "nikto", "nmap", "nuclei", "sqlmap", "whatweb", "wfuzz",
+    }
+    if tool.lower() in network_tools:
+        target = _extract_network_target(tool, arglist)
+        if not target:
+            return (
+                f"Error: could not infer target for network tool '{tool}'. "
+                "Use a dedicated wrapper or include a clear target argument."
+            )
+        if not _is_target_in_scope(target):
+            return _scope_block_message(target)
+
     if docker_runner is None:
         docker_runner = DockerRunner()
     if db is None:
         db = await get_database()
-    job_id = uuid.uuid4().hex[:12]
-    arglist = args.split()
 
     if durable:
         from .docker_runner import TOOL_IMAGES
@@ -1543,6 +1748,8 @@ async def run_ffuf(url: str, wordlist: str = "/usr/share/wordlists/dirb/common.t
 
     Returns status-grouped hits. Pass format='json' for raw ffuf JSON."""
     global docker_runner
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
     if docker_runner is None:
         docker_runner = DockerRunner()
     opt = options.split() if options else []
@@ -1572,6 +1779,8 @@ async def run_nuclei(url: str, options: str = "-silent", timeout: int = 600,
 
     Returns severity-grouped findings. Pass format='json' for raw nuclei JSONL."""
     global docker_runner
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
     if docker_runner is None:
         docker_runner = DockerRunner()
     opt = options.split() if options else []
@@ -1780,9 +1989,20 @@ async def create_challenge(name: str, category: str = "", description: str = "")
 async def ingest_challenge_file(challenge_id: str, src_path: str) -> str:
     """Copy a host file into a challenge's files/ dir (records hash in DB)."""
     from .challenge import ingest_file as _ingest
+    from .evidence import append_evidence_event
+
     res = await _ingest(challenge_id, src_path)
     if res.get("error"):
         return f"Error: {res['error']}"
+    append_evidence_event(
+        _workspace_root(),
+        "artifact_ingested",
+        challenge_id=challenge_id,
+        files=[src_path],
+        file_hashes=[{"path": res["container_path"], "sha256": res["sha256"]}],
+        artifacts=[res["container_path"]],
+        metadata={"source": src_path},
+    )
     return f"ingested {res['ingested']} (sha256 {res['sha256'][:16]}...) -> {res['container_path']}"
 
 
@@ -1790,9 +2010,18 @@ async def ingest_challenge_file(challenge_id: str, src_path: str) -> str:
 async def record_challenge_finding(challenge_id: str, kind: str, value: str, notes: str = "") -> str:
     """Record a finding (flag/credential/note) against a challenge + append to its WRITEUP.md."""
     from .challenge import record_finding as _record
+    from .evidence import append_evidence_event
+
     res = await _record(challenge_id, kind, value, notes=notes)
     if res.get("error"):
         return f"Error: {res['error']}"
+    append_evidence_event(
+        _workspace_root(),
+        "finding_recorded",
+        challenge_id=challenge_id,
+        artifacts=[{"kind": kind, "value": value}],
+        metadata={"notes": notes} if notes else {},
+    )
     return f"recorded {res['recorded']} for {res['challenge_id']}: {res['value']}"
 
 
@@ -1844,6 +2073,96 @@ async def get_playbook(query: str, category: str = "") -> str:
     if pb is None:
         return "No matching playbook. Use list_playbooks to see all, or proceed with the category route."
     return render_playbook(pb)
+
+
+@mcp.resource("ctfsolver://inventory", mime_type="application/json")
+def resource_inventory() -> str:
+    """Read-only backend inventory for MCP clients."""
+    from .manifest import build_manifest
+
+    return json.dumps(build_manifest(), indent=2, sort_keys=True)
+
+
+@mcp.resource("ctfsolver://playbooks", mime_type="application/json")
+def resource_playbooks() -> str:
+    """Read-only list of built-in solver playbooks."""
+    from .playbooks import list_playbooks as _list
+
+    return json.dumps(_list(), indent=2, sort_keys=True)
+
+
+@mcp.resource("ctfsolver://skills", mime_type="application/json")
+def resource_skills() -> str:
+    """Read-only list of bundled skill Markdown documents."""
+    root = Path(__file__).resolve().parents[2]
+    skills_root = root / "skills"
+    paths = sorted(path.relative_to(root).as_posix() for path in skills_root.rglob("*.md"))
+    return json.dumps({"count": len(paths), "paths": paths}, indent=2, sort_keys=True)
+
+
+def _category_prompt(category: str, challenge: str, target: str = "", files: str = "") -> str:
+    parts = [
+        f"Solve this {category} CTF challenge using ctfsolver non-CTFd MCP mode.",
+        "create or select a challenge workspace, record findings as you go, and prefer safe offline triage before network scans.",
+    ]
+    if challenge:
+        parts.append(f"Challenge: {challenge}")
+    if target:
+        parts.append(f"Target: {target}")
+    if files:
+        parts.append(f"Files: {files}")
+    parts.append("Use get_playbook or suggest_next_tools when unsure, then run the narrowest relevant tools.")
+    parts.append("When a flag is found, record it with record_challenge_finding and generate a concise writeup.")
+    return "\n\n".join(parts)
+
+
+@mcp.prompt(name="ctf_web_workflow")
+def prompt_web(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable web challenge workflow prompt."""
+    return _category_prompt("web", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_pwn_workflow")
+def prompt_pwn(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable pwn challenge workflow prompt."""
+    return _category_prompt("pwn", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_rev_workflow")
+def prompt_rev(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable reverse engineering challenge workflow prompt."""
+    return _category_prompt("reverse engineering", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_crypto_workflow")
+def prompt_crypto(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable crypto challenge workflow prompt."""
+    return _category_prompt("crypto", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_forensics_workflow")
+def prompt_forensics(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable forensics challenge workflow prompt."""
+    return _category_prompt("forensics", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_osint_workflow")
+def prompt_osint(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable OSINT challenge workflow prompt."""
+    return _category_prompt("OSINT", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_mobile_workflow")
+def prompt_mobile(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable mobile challenge workflow prompt."""
+    return _category_prompt("mobile", challenge, target, files)
+
+
+@mcp.prompt(name="ctf_cloud_workflow")
+def prompt_cloud(challenge: str, target: str = "", files: str = "") -> str:
+    """Reusable cloud challenge workflow prompt."""
+    return _category_prompt("cloud", challenge, target, files)
+
 
 def main():
     """Main entry point for the MCP server."""

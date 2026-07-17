@@ -601,7 +601,7 @@ async def get_database() -> CTFDatabase:
         _db_init_lock = asyncio.Lock()
     async with _db_init_lock:
         if _db_instance is None:
-            _db_instance = CTFDatabase()
+            _db_instance = CTFDatabase(DEFAULT_DB_PATH)
             await _db_instance.connect()
     return _db_instance
 
