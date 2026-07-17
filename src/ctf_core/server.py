@@ -1,5 +1,7 @@
 """MCP Server entry point for CTF Toolkit."""
 
+# ruff: noqa: E402
+
 import asyncio
 import json
 import logging
@@ -37,7 +39,6 @@ from .docker_runner import DockerRunner, WORKSPACE_PATH
 from .parsers.nmap_parser import parse_nmap_xml, format_for_database, generate_summary
 from .parsers.ferox_parser import parse_feroxbuster_jsonl, generate_summary as ferox_generate_summary
 from .parsers.sploit_parser import parse_searchsploit_json, generate_summary as sploit_generate_summary
-from .utils.sanitize import sanitize_command
 from .utils.shodan_client import ShodanClient
 from .utils.flag_detector import FlagPatternDetector
 from .agents.mode_controller import ModeController
@@ -132,17 +133,30 @@ def _split_user_list(value: str) -> list[str]:
     return [item.strip() for item in re.split(r"[\n,]+", value or "") if item.strip()]
 
 
+def _json_response(payload: Any) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True, default=str)
+
+
 def _resolve_workspace_file(path: str) -> Path:
     """Resolve a user-supplied artifact path with workspace-relative safety."""
-    raw = Path(path)
-    if raw.is_absolute():
-        return raw
+    from .execution import resolve_workspace_path
+
+    return resolve_workspace_path(path, _workspace_root(), allow_absolute_host_paths=True)
+
+
+def _workspace_container_path(path: str) -> str:
+    """Return a normalized /workspace container path for a workspace file."""
+    from .execution import resolve_workspace_path
 
     root = _workspace_root().resolve()
-    resolved = (root / raw).resolve()
-    if resolved != root and root not in resolved.parents:
-        raise ValueError(f"path escapes workspace: {path}")
-    return resolved
+    resolved = resolve_workspace_path(path, root)
+    relative = resolved.relative_to(root).as_posix()
+    return f"/workspace/{relative}" if relative != "." else "/workspace"
+
+
+def _derived_workspace_dir(path: str, prefix: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(path).stem).strip("._-") or "artifact"
+    return f"derived/{prefix}_{stem}"
 
 
 def validate_environment() -> tuple[bool, list[str]]:
@@ -312,9 +326,6 @@ async def run_searchsploit(query: str, format: str = "text") -> str:
     """
     global db, docker_runner
 
-    if not _is_target_in_scope(url):
-        return _scope_block_message(url)
-    
     if docker_runner is None:
         docker_runner = DockerRunner()
     
@@ -1582,7 +1593,10 @@ async def run_binary_analysis(path: str) -> str:
     global db, docker_runner
     if docker_runner is None:
         docker_runner = DockerRunner()
-    target = f"/workspace/{path.lstrip('/')}"
+    try:
+        target = _workspace_container_path(path)
+    except ValueError as exc:
+        return f"Error: {exc}"
     steps = [
         ("file", [target]),
         ("readelf", ["-h", target]),
@@ -1653,7 +1667,10 @@ async def run_pwntools(script: str, timeout: int = 120) -> str:
 @mcp.tool(structured_output=False)
 async def run_gdb_script(binary_path: str, commands: str, timeout: int = 120) -> str:
     """Run batch GDB commands against a workspace binary in the ctf-pwn container (F1)."""
-    target = f"/workspace/{binary_path.lstrip('/')}"
+    try:
+        target = _workspace_container_path(binary_path)
+    except ValueError as exc:
+        return f"Error: {exc}"
     return await _run_gdb(target, commands, timeout)
 
 
@@ -1680,7 +1697,10 @@ async def decode_stego(path: str, passphrase: str = "", timeout: int = 120) -> s
     global docker_runner
     if docker_runner is None:
         docker_runner = DockerRunner()
-    target = f"/workspace/{path.lstrip('/')}"
+    try:
+        target = _workspace_container_path(path)
+    except ValueError as exc:
+        return f"Error: {exc}"
     steghide_args = ["info", "-sf", target] + (["-p", passphrase] if passphrase else [])
     steps = [("exiftool", [target]), ("strings", ["-n", "8", target]), ("steghide", steghide_args)]
     sections = [f"# Stego analysis: {path}", ""]
@@ -1721,7 +1741,10 @@ async def _run_target_tool(tool: str, path: str, extra: Optional[list] = None,
     global db, docker_runner
     if docker_runner is None:
         docker_runner = DockerRunner()
-    target = f"/workspace/{path.lstrip('/')}"
+    try:
+        target = _workspace_container_path(path)
+    except ValueError as exc:
+        return f"Error: {exc}"
     args = (pre_args or []) + [target] + (extra or [])
     try:
         result = await docker_runner.run_tool(tool, args, timeout=timeout, image=image)
@@ -1783,6 +1806,68 @@ async def run_floss(path: str, timeout: int = 300, format: str = "text") -> str:
 async def run_wasm2wat(path: str, timeout: int = 120) -> str:
     """Disassemble a WebAssembly .wasm to readable .wat text."""
     return await _run_target_tool("wasm2wat", path, image="ctftoolkit/ctf-re", timeout=timeout)
+
+
+@mcp.tool(structured_output=False)
+async def run_apktool(path: str, output_dir: str = "", timeout: int = 300) -> str:
+    """Decode an Android APK into workspace-derived resources and smali."""
+    output = output_dir or _derived_workspace_dir(path, "apktool")
+    try:
+        out_path = _workspace_container_path(output)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return await _run_target_tool(
+        "apktool",
+        path,
+        pre_args=["d", "-f", "-o", out_path],
+        image="ctftoolkit/ctf-mobile",
+        timeout=timeout,
+    )
+
+
+@mcp.tool(structured_output=False)
+async def run_jadx(path: str, output_dir: str = "", timeout: int = 300) -> str:
+    """Decompile an APK/DEX/JAR into Java source using JADX."""
+    output = output_dir or _derived_workspace_dir(path, "jadx")
+    try:
+        out_path = _workspace_container_path(output)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return await _run_target_tool(
+        "jadx",
+        path,
+        pre_args=["-d", out_path],
+        image="ctftoolkit/ctf-mobile",
+        timeout=timeout,
+    )
+
+
+@mcp.tool(structured_output=False)
+async def run_ilspycmd(path: str, output_dir: str = "", timeout: int = 300) -> str:
+    """Decompile a .NET assembly into a workspace-derived C# project."""
+    output = output_dir or _derived_workspace_dir(path, "ilspy")
+    try:
+        out_path = _workspace_container_path(output)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return await _run_target_tool(
+        "ilspycmd",
+        path,
+        pre_args=["-p", "-o", out_path],
+        image="ctftoolkit/ctf-mobile",
+        timeout=timeout,
+    )
+
+
+@mcp.tool(structured_output=False)
+async def run_pyinstxtractor(path: str, timeout: int = 300) -> str:
+    """Extract a PyInstaller executable bundle inside the mobile/managed-code image."""
+    return await _run_target_tool(
+        "pyinstxtractor",
+        path,
+        image="ctftoolkit/ctf-mobile",
+        timeout=timeout,
+    )
 
 
 # ---- Pwn ----
@@ -1912,14 +1997,30 @@ async def extract_usb_hid_pcap(path: str, mode: str = "auto", timeout: int = 180
 
 
 @mcp.tool(structured_output=False)
+async def run_capinfos(path: str, options: str = "-a -c -d -e -H", timeout: int = 120) -> str:
+    """Summarize PCAP metadata with capinfos."""
+    extra = options.split() if options else []
+    return await _run_target_tool(
+        "capinfos",
+        path,
+        pre_args=extra,
+        image="ctftoolkit/ctf-forensics",
+        timeout=timeout,
+    )
+
+
+@mcp.tool(structured_output=False)
 async def run_sox_spectrogram(path: str, out_name: str = "spectrogram.png",
                               timeout: int = 120) -> str:
     """Generate a spectrogram PNG from an audio file with sox (for SSTV/audio stego)."""
     global docker_runner
     if docker_runner is None:
         docker_runner = DockerRunner()
-    target = f"/workspace/{path.lstrip('/')}"
-    out = f"/workspace/{out_name.lstrip('/')}"
+    try:
+        target = _workspace_container_path(path)
+        out = _workspace_container_path(out_name)
+    except ValueError as exc:
+        return f"Error: {exc}"
     try:
         result = await docker_runner.run_tool(
             "sox", [target, "-n", "spectrogram", "-o", out],
@@ -2016,6 +2117,145 @@ async def run_jwt_tool(token: str, options: str = "", timeout: int = 120) -> str
         result = await docker_runner.run_tool("jwt_tool", args, timeout=timeout)
     except Exception as e:
         return f"Error running jwt_tool: {e}"
+    out = (result.get("stdout", "") + result.get("stderr", "")).strip()
+    return out[:8000] or "(no output)"
+
+
+@mcp.tool(structured_output=False)
+async def run_katana(url: str, options: str = "-silent -json", timeout: int = 300) -> str:
+    """Crawl a scoped web target with Katana for endpoint discovery."""
+    global docker_runner
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
+    if docker_runner is None:
+        docker_runner = DockerRunner()
+    args = ["-u", url] + (options.split() if options else [])
+    try:
+        result = await docker_runner.run_tool("katana", args, timeout=timeout)
+    except Exception as e:
+        return f"Error running katana: {e}"
+    out = (result.get("stdout", "") + result.get("stderr", "")).strip()
+    return out[:8000] or "(no output)"
+
+
+@mcp.tool(structured_output=False)
+async def run_arjun(url: str, options: str = "-oJ -", timeout: int = 300) -> str:
+    """Discover hidden HTTP parameters on a scoped URL with Arjun."""
+    global docker_runner
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
+    if docker_runner is None:
+        docker_runner = DockerRunner()
+    args = ["-u", url] + (options.split() if options else [])
+    try:
+        result = await docker_runner.run_tool("arjun", args, timeout=timeout)
+    except Exception as e:
+        return f"Error running arjun: {e}"
+    out = (result.get("stdout", "") + result.get("stderr", "")).strip()
+    return out[:8000] or "(no output)"
+
+
+@mcp.tool(structured_output=False)
+async def run_linkfinder(input_path_or_url: str, options: str = "-o cli", timeout: int = 180) -> str:
+    """Extract endpoints from JavaScript by URL or workspace file using LinkFinder."""
+    global docker_runner
+    target = input_path_or_url
+    if input_path_or_url.startswith(("http://", "https://")):
+        if not _is_target_in_scope(input_path_or_url):
+            return _scope_block_message(input_path_or_url)
+    else:
+        try:
+            target = _workspace_container_path(input_path_or_url)
+        except ValueError as exc:
+            return f"Error: {exc}"
+    if docker_runner is None:
+        docker_runner = DockerRunner()
+    args = ["-i", target] + (options.split() if options else [])
+    try:
+        result = await docker_runner.run_tool("linkfinder", args, timeout=timeout)
+    except Exception as e:
+        return f"Error running linkfinder: {e}"
+    out = (result.get("stdout", "") + result.get("stderr", "")).strip()
+    return out[:8000] or "(no output)"
+
+
+@mcp.tool(structured_output=False)
+async def run_git_dumper(url: str, output_dir: str = "", timeout: int = 300) -> str:
+    """Download an exposed .git directory from a scoped CTF URL."""
+    global docker_runner
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
+    output = output_dir or "derived/git-dumper"
+    try:
+        out_path = _workspace_container_path(output)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    if docker_runner is None:
+        docker_runner = DockerRunner()
+    try:
+        result = await docker_runner.run_tool("git-dumper", [url, out_path], timeout=timeout)
+    except Exception as e:
+        return f"Error running git-dumper: {e}"
+    out = (result.get("stdout", "") + result.get("stderr", "")).strip()
+    return out[:8000] or "(no output)"
+
+
+@mcp.tool(structured_output=False)
+async def run_gitleaks(path: str, options: str = "--no-git --redact", timeout: int = 300) -> str:
+    """Scan a workspace source tree or extracted repo for secret leaks with Gitleaks."""
+    extra = options.split() if options else []
+    return await _run_target_tool(
+        "gitleaks",
+        path,
+        pre_args=["detect", "--source"],
+        extra=extra,
+        image="ctftoolkit/ctf-tools",
+        timeout=timeout,
+    )
+
+
+@mcp.tool(structured_output=False)
+async def run_schemathesis(schema: str, base_url: str = "", options: str = "", timeout: int = 600) -> str:
+    """Run bounded OpenAPI contract checks with Schemathesis."""
+    global docker_runner
+    schema_arg = schema
+    if schema.startswith(("http://", "https://")):
+        if not _is_target_in_scope(schema):
+            return _scope_block_message(schema)
+    else:
+        try:
+            schema_arg = _workspace_container_path(schema)
+        except ValueError as exc:
+            return f"Error: {exc}"
+    if base_url and not _is_target_in_scope(base_url):
+        return _scope_block_message(base_url)
+    if docker_runner is None:
+        docker_runner = DockerRunner()
+    args = ["run", schema_arg]
+    if base_url:
+        args += ["--base-url", base_url]
+    args += options.split() if options else []
+    try:
+        result = await docker_runner.run_tool("schemathesis", args, timeout=timeout)
+    except Exception as e:
+        return f"Error running schemathesis: {e}"
+    out = (result.get("stdout", "") + result.get("stderr", "")).strip()
+    return out[:8000] or "(no output)"
+
+
+@mcp.tool(structured_output=False)
+async def run_graphql_cop(url: str, options: str = "--json", timeout: int = 300) -> str:
+    """Run scoped GraphQL endpoint checks with GraphQL Cop."""
+    global docker_runner
+    if not _is_target_in_scope(url):
+        return _scope_block_message(url)
+    if docker_runner is None:
+        docker_runner = DockerRunner()
+    args = ["-t", url] + (options.split() if options else [])
+    try:
+        result = await docker_runner.run_tool("graphql-cop", args, timeout=timeout)
+    except Exception as e:
+        return f"Error running graphql-cop: {e}"
     out = (result.get("stdout", "") + result.get("stderr", "")).strip()
     return out[:8000] or "(no output)"
 
@@ -2274,6 +2514,151 @@ async def get_playbook(query: str, category: str = "") -> str:
     return render_playbook(pb)
 
 
+@mcp.tool(structured_output=False)
+async def list_solver_templates(category: str = "", limit: int = 100) -> str:
+    """List metadata-only solver templates for reverse, pwn, crypto, and forensics work."""
+    from .solver_templates import list_solver_templates as _list_solver_templates
+
+    templates = _list_solver_templates()
+    if category:
+        wanted = category.strip().lower().replace("_", "-")
+        templates = [
+            template
+            for template in templates
+            if str(template.get("category", "")).lower().replace("_", "-") == wanted
+        ]
+    return _json_response(templates[: max(0, limit)])
+
+
+@mcp.tool(structured_output=False)
+async def get_solver_template(template_id: str) -> str:
+    """Return one solver template by id."""
+    from .solver_templates import get_solver_template as _get_solver_template
+
+    try:
+        return _json_response(_get_solver_template(template_id))
+    except KeyError:
+        return f"Error: unknown solver template id: {template_id}"
+
+
+@mcp.tool(structured_output=False)
+async def select_solver_templates(
+    description: str = "",
+    category: str = "",
+    files: str = "",
+    findings: str = "",
+    limit: int = 10,
+) -> str:
+    """Rank solver templates from challenge description, category, files, and findings."""
+    from .solver_templates import select_solver_templates as _select_solver_templates
+
+    return _json_response(
+        _select_solver_templates(
+            description=description,
+            category=category,
+            files=_split_user_list(files),
+            findings=_split_user_list(findings),
+            limit=limit,
+        )
+    )
+
+
+@mcp.tool(structured_output=False)
+async def score_playbooks(
+    description: str = "",
+    category: str = "",
+    target: str = "",
+    files: str = "",
+    findings: str = "",
+    failures: str = "",
+    limit: int = 10,
+) -> str:
+    """Rank playbooks/workflow chains with prerequisites, artifacts, failures, and next actions."""
+    from .playbook_scoring import select_scored_playbooks
+
+    return _json_response(
+        select_scored_playbooks(
+            description=description,
+            category=category,
+            target=target,
+            files=_split_user_list(files),
+            findings=_split_user_list(findings),
+            failures=_split_user_list(failures),
+            limit=limit,
+        )
+    )
+
+
+@mcp.tool(structured_output=False)
+async def get_best_playbook(
+    description: str = "",
+    category: str = "",
+    target: str = "",
+    files: str = "",
+    findings: str = "",
+    failures: str = "",
+) -> str:
+    """Return the highest-scoring playbook or workflow-chain candidate."""
+    from .playbook_scoring import select_best_playbook
+
+    result = select_best_playbook(
+        description=description,
+        category=category,
+        target=target,
+        files=_split_user_list(files),
+        findings=_split_user_list(findings),
+        failures=_split_user_list(failures),
+    )
+    return _json_response(result or {})
+
+
+@mcp.tool(structured_output=False)
+async def list_playbook_failure_branches() -> str:
+    """List common failure branches used by scored playbook routing."""
+    from .playbook_scoring import common_failure_branches
+
+    return _json_response(common_failure_branches())
+
+
+@mcp.tool(structured_output=False)
+async def get_case_resource_context(selector: str = "") -> str:
+    """Return files, notes, findings, evidence logs, playbooks, and writeups for cases."""
+    from .resources import build_resource_context
+
+    return _json_response(build_resource_context(selector or None, _workspace_root()))
+
+
+@mcp.tool(structured_output=False)
+async def simulate_structured_tool_result(
+    tool: str = "file",
+    args: str = "",
+    stdout: str = "simulated structured result",
+    challenge_id: str = "",
+    target: str = "",
+    record_evidence: bool = False,
+) -> str:
+    """Return a structured ToolResult without invoking Docker; optionally record evidence."""
+    from .execution import log_execution_result, simulate_read_only_tool_call
+
+    arglist = _split_user_list(args) if args else []
+    result = simulate_read_only_tool_call(
+        tool,
+        arglist,
+        stdout=stdout,
+        target=target or None,
+        challenge_id=challenge_id or None,
+    )
+    payload: dict[str, Any] = {"result": result.to_dict()}
+    if record_evidence:
+        payload["evidence"] = log_execution_result(
+            _workspace_root(),
+            result,
+            challenge_id=challenge_id or None,
+            target=target or None,
+        )
+    return _json_response(payload)
+
+
 @mcp.resource("ctfsolver://inventory", mime_type="application/json")
 def resource_inventory() -> str:
     """Read-only backend inventory for MCP clients."""
@@ -2305,6 +2690,54 @@ def resource_cases() -> str:
     from .cases import list_cases as _list_cases
 
     return json.dumps(_list_cases(_workspace_root()), indent=2, sort_keys=True)
+
+
+@mcp.resource("ctfsolver://challenge-files", mime_type="application/json")
+def resource_challenge_files() -> str:
+    """Read-only challenge files and attached artifacts."""
+    from .resources import build_challenge_files_resource
+
+    return _json_response(build_challenge_files_resource(workspace=_workspace_root()))
+
+
+@mcp.resource("ctfsolver://notes", mime_type="application/json")
+def resource_notes() -> str:
+    """Read-only case notes and hypotheses."""
+    from .resources import build_notes_resource
+
+    return _json_response(build_notes_resource(workspace=_workspace_root()))
+
+
+@mcp.resource("ctfsolver://findings", mime_type="application/json")
+def resource_findings() -> str:
+    """Read-only case findings."""
+    from .resources import build_findings_resource
+
+    return _json_response(build_findings_resource(workspace=_workspace_root()))
+
+
+@mcp.resource("ctfsolver://evidence-logs", mime_type="application/json")
+def resource_evidence_logs() -> str:
+    """Read-only JSONL evidence event summaries."""
+    from .resources import build_evidence_logs_resource
+
+    return _json_response(build_evidence_logs_resource(workspace=_workspace_root()))
+
+
+@mcp.resource("ctfsolver://writeups", mime_type="application/json")
+def resource_writeups() -> str:
+    """Read-only current and generated writeup context."""
+    from .resources import build_writeups_resource
+
+    return _json_response(build_writeups_resource(workspace=_workspace_root()))
+
+
+@mcp.resource("ctfsolver://context", mime_type="application/json")
+def resource_context() -> str:
+    """Read-only full backend context for MCP clients."""
+    from .resources import build_resource_context
+
+    return _json_response(build_resource_context(workspace=_workspace_root()))
 
 
 @mcp.resource("ctfsolver://workflow-chains", mime_type="application/json")

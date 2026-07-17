@@ -28,8 +28,10 @@ async def test_smoke_challenge_roundtrip_uses_temp_runtime(tmp_path, monkeypatch
     assert {check.name for check in report.checks} == {
         "mcp_tool_inventory",
         "registry_inventory",
+        "mcp_surface",
         "challenge_roundtrip",
         "artifact_triage",
+        "structured_result",
     }
     assert (workspace / "challenges" / "smoke-local-challenge" / "WRITEUP.md").is_file()
     assert db_path.is_file()
@@ -58,6 +60,8 @@ def test_mcp_smoke_script_outputs_json(tmp_path) -> None:
     assert {check["name"] for check in payload["checks"]} == {
         "mcp_tool_inventory",
         "registry_inventory",
+        "mcp_surface",
         "challenge_roundtrip",
         "artifact_triage",
+        "structured_result",
     }

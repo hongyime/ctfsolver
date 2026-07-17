@@ -15,7 +15,7 @@ from typing import Any, Mapping, Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INSPECT_TIMEOUT_SECONDS = 10
 PROBE_TIMEOUT_SECONDS = 30
-LAZY_IMAGES = frozenset({"ctftoolkit/ctf-sage"})
+LAZY_IMAGES = frozenset({"ctftoolkit/ctf-mobile", "ctftoolkit/ctf-sage"})
 
 
 @dataclass(frozen=True, slots=True)

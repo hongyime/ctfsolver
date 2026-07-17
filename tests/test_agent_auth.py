@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from ctf_harness_app import agents
 
 
@@ -71,3 +69,41 @@ def test_docker_command_does_not_mount_host_auth_dirs(tmp_path, monkeypatch) -> 
 
     assert str(claude_home) not in command_text
     assert ".agent-home" in command_text
+
+
+def test_claude_inner_command_uses_agent_mcp_http_config(monkeypatch) -> None:
+    monkeypatch.setenv("CTF_HARNESS_AGENT_MCP_URL", "http://127.0.0.1:8000/mcp")
+
+    command = agents.claude_inner_command("start")
+    command_text = " ".join(command)
+
+    assert "--strict-mcp-config" in command_text
+    assert "--mcp-config" in command_text
+    assert '"ctfsolver"' in command_text
+    assert '"type":"http"' in command_text
+    assert '"url":"http://127.0.0.1:8000/mcp"' in command_text
+    assert "mcp__ctfsolver__*" in command_text
+
+
+def test_claude_inner_command_keeps_empty_mcp_config_without_url(monkeypatch) -> None:
+    monkeypatch.delenv("CTF_HARNESS_AGENT_MCP_URL", raising=False)
+
+    command = agents.claude_inner_command("start")
+    command_text = " ".join(command)
+
+    assert "'{\"mcpServers\":{}}'" in command_text
+    assert "mcp__ctfsolver__*" not in command_text
+
+
+def test_docker_command_writes_codex_agent_mcp_config(tmp_path, monkeypatch) -> None:
+    challenge_dir = tmp_path / "challenge"
+    challenge_dir.mkdir()
+    monkeypatch.setenv("CTF_HARNESS_AGENT_MCP_URL", "http://127.0.0.1:8000/mcp")
+
+    agents.docker_command(challenge_dir, ["true"], agent="codex")
+
+    config = challenge_dir / ".agent-home" / ".codex" / "config.toml"
+    assert config.read_text(encoding="utf-8") == (
+        "[mcp_servers.ctfsolver]\n"
+        'url = "http://127.0.0.1:8000/mcp"\n'
+    )

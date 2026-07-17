@@ -10,11 +10,11 @@ def test_toolkit_inventory_absorbed() -> None:
     status = toolkit_status_snapshot()
 
     assert status["ok"] is True
-    assert status["mcp_tools"] >= 71
-    assert status["registry_tools"] == 60
-    assert len(TOOL_REGISTRY) == 60
+    assert status["mcp_tools"] >= 114
+    assert status["registry_tools"] == 72
+    assert len(TOOL_REGISTRY) == 72
     assert status["skill_files"] == 33
-    assert status["dockerfiles"] == 6
+    assert status["dockerfiles"] == 7
     assert status["schema_files"] == 2
 
 
@@ -37,6 +37,8 @@ def test_launchers_run_backend_and_full_stack() -> None:
     assert "python -m ctf_core.server" in backend
     assert "scripts\\mcp_smoke.py" in backend
     assert "scripts\\mcp_http.py" in backend
+    assert "CTF_HARNESS_AGENT_MCP_URL" in full
+    assert "start_backend.bat\" --http" in full
     assert "streamlit run" in full
     assert "streamlit_app.py" in full
     assert "OneDrive" not in backend + full

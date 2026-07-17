@@ -58,7 +58,7 @@ TOOL_PACKS: tuple[ToolPack, ...] = (
             "objection",
             "MobSF",
         ),
-        docker_image_hint="ctfsolver/ctf-mobile:optional",
+        docker_image_hint="ctftoolkit/ctf-mobile",
         risk="medium",
         install_notes=(
             "Install only when Android or iOS challenge artifacts are expected.",

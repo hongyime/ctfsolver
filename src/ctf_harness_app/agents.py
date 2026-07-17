@@ -17,6 +17,7 @@ from .util import HarnessError
 PROMPT_FILENAME = ".ctf-harness-current-prompt.md"
 NO_OUTPUT_NOTICE_SECONDS = 60
 OUTPUT_BUFFER_LIMIT = 500_000
+AGENT_MCP_SERVER_NAME = "ctfsolver"
 
 
 def host_codex_auth_path() -> Path:
@@ -89,6 +90,48 @@ def codex_env_summary() -> str:
 def codex_model() -> str:
     model = os.environ.get("CTF_HARNESS_CODEX_MODEL", "").strip() or DEFAULT_CODEX_MODEL
     return model
+
+
+def agent_mcp_url() -> str:
+    return os.environ.get("CTF_HARNESS_AGENT_MCP_URL", "").strip()
+
+
+def agent_mcp_config() -> dict[str, object]:
+    url = agent_mcp_url()
+    if not url:
+        return {"mcpServers": {}}
+    return {
+        "mcpServers": {
+            AGENT_MCP_SERVER_NAME: {
+                "type": "http",
+                "url": url,
+            }
+        }
+    }
+
+
+def agent_mcp_config_json() -> str:
+    return json.dumps(agent_mcp_config(), separators=(",", ":"))
+
+
+def claude_allowed_tools() -> str:
+    tools = "Bash(*),Read,Write,Edit,Glob,Grep,WebSearch,WebFetch"
+    if agent_mcp_url():
+        tools += f",mcp__{AGENT_MCP_SERVER_NAME}__*"
+    return tools
+
+
+def write_codex_mcp_config(codex_home: Path) -> None:
+    url = agent_mcp_url()
+    if not url:
+        return
+    codex_home.mkdir(parents=True, exist_ok=True)
+    config_path = codex_home / "config.toml"
+    config_path.write_text(
+        f"[mcp_servers.{AGENT_MCP_SERVER_NAME}]\n"
+        f"url = {json.dumps(url)}\n",
+        encoding="utf-8",
+    )
 
 
 def build_tools_image(
@@ -189,17 +232,18 @@ def stream_reported_error(output: bytes) -> tuple[bool, str]:
 
 def claude_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FILENAME}") -> list[str]:
     claude_args = ["claude", "-p"]
+    mcp_config = agent_mcp_config_json()
     if os.environ.get("ANTHROPIC_API_KEY"):
-        claude_args.extend(["--bare", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}'])
+        claude_args.extend(["--bare", "--strict-mcp-config", "--mcp-config", mcp_config])
     else:
-        claude_args.extend(["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}'])
+        claude_args.extend(["--strict-mcp-config", "--mcp-config", mcp_config])
     if action == "continue":
         claude_args.append("--continue")
     claude_args.extend([
         "--permission-mode",
         "dontAsk",
         "--allowedTools",
-        "Bash(*),Read,Write,Edit,Glob,Grep,WebSearch,WebFetch",
+        claude_allowed_tools(),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -309,6 +353,8 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
         shutil.copy2(host_claude_credentials_path(), home / ".claude" / ".credentials.json")
     if agent == "codex" and host_codex_auth_path().exists():
         shutil.copy2(host_codex_auth_path(), home / ".codex" / "auth.json")
+    if agent == "codex":
+        write_codex_mcp_config(home / ".codex")
     name = f"ctf-{challenge_dir.name[:48]}-{agent}-{int(time.time())}"
     command = [
         "docker",

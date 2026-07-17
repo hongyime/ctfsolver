@@ -64,6 +64,47 @@ def registry_count() -> int:
     return len(TOOL_REGISTRY)
 
 
+async def _mcp_surface_roundtrip(min_tools: int) -> SmokeCheck:
+    try:
+        from .server import mcp
+
+        tools, resources, prompts = await asyncio.gather(
+            asyncio.wait_for(mcp.list_tools(), timeout=15),
+            asyncio.wait_for(mcp.list_resources(), timeout=15),
+            asyncio.wait_for(mcp.list_prompts(), timeout=15),
+        )
+        tool_names = {getattr(tool, "name", "") for tool in tools}
+        required_tool_names = {
+            "get_case_resource_context",
+            "run_backend_smoke",
+            "score_playbooks",
+            "select_solver_templates",
+            "simulate_structured_tool_result",
+            "suggest_next_tools",
+            "triage_artifact",
+        }
+        present_required_tools = sorted(required_tool_names.intersection(tool_names))
+        ok = (
+            len(tools) >= min_tools
+            and present_required_tools == sorted(required_tool_names)
+            and len(resources) >= 12
+            and len(prompts) >= 8
+        )
+        return SmokeCheck(
+            "mcp_surface",
+            ok,
+            f"{len(tools)} tools, {len(resources)} resources, {len(prompts)} prompts listed",
+            {
+                "tools": len(tools),
+                "resources": len(resources),
+                "prompts": len(prompts),
+                "required_tools": present_required_tools,
+            },
+        )
+    except Exception as exc:
+        return SmokeCheck("mcp_surface", False, str(exc))
+
+
 async def _challenge_roundtrip(workspace: Path, db_path: Path) -> SmokeCheck:
     os.environ["CTFTOOLKIT_WORKSPACE"] = str(workspace)
     os.environ["CTFTOOLKIT_DB_PATH"] = str(db_path)
@@ -117,6 +158,44 @@ def _artifact_triage_roundtrip(workspace: Path) -> SmokeCheck:
         return SmokeCheck("artifact_triage", False, str(exc))
 
 
+def _structured_result_roundtrip(workspace: Path) -> SmokeCheck:
+    from .execution import log_execution_result, simulate_read_only_tool_call
+
+    try:
+        result = simulate_read_only_tool_call(
+            "file",
+            ["smoke-artifact.txt"],
+            stdout="smoke-artifact.txt: ASCII text\n",
+            target="smoke-artifact.txt",
+            challenge_id="smoke-local-challenge",
+        )
+        event = log_execution_result(
+            workspace,
+            result,
+            challenge_id="smoke-local-challenge",
+            target="smoke-artifact.txt",
+        )
+        data = result.to_dict()
+        ok = (
+            data["ok"] is True
+            and data["tool"] == "file"
+            and data["command"] == ["file", "smoke-artifact.txt"]
+            and event["result_summary"]["ok"] is True
+        )
+        return SmokeCheck(
+            "structured_result",
+            ok,
+            "structured ToolResult simulation and evidence write passed",
+            {
+                "tool": data["tool"],
+                "challenge_id": event.get("challenge_id"),
+                "event_type": event.get("event_type"),
+            },
+        )
+    except Exception as exc:  # pragma: no cover - exercised by CLI failure path.
+        return SmokeCheck("structured_result", False, str(exc))
+
+
 async def run_smoke(
     *,
     min_mcp_tools: int = 71,
@@ -155,6 +234,8 @@ async def run_smoke(
     except Exception as exc:
         checks.append(SmokeCheck("registry_inventory", False, str(exc)))
 
+    checks.append(await _mcp_surface_roundtrip(min_mcp_tools))
+
     if challenge_roundtrip:
         if workspace is None or db_path is None:
             with tempfile.TemporaryDirectory(prefix="ctfsolver-smoke-") as tmp:
@@ -162,9 +243,11 @@ async def run_smoke(
                 workspace_path = root / "workspace"
                 checks.append(await _challenge_roundtrip(workspace_path, root / "ctf_state.db"))
                 checks.append(_artifact_triage_roundtrip(workspace_path))
+                checks.append(_structured_result_roundtrip(workspace_path))
         else:
             checks.append(await _challenge_roundtrip(workspace, db_path))
             checks.append(_artifact_triage_roundtrip(workspace))
+            checks.append(_structured_result_roundtrip(workspace))
 
     return SmokeReport(ok=all(check.ok for check in checks), checks=checks)
 

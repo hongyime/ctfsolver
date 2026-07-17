@@ -33,6 +33,8 @@ The application relies strictly on environment variables for API authentication 
 | `CTF_HARNESS_CODEX_MODEL`| Model override (defaults to `gpt-5.4`). | Executing Codex |
 | `CTF_HARNESS_CLAUDE_CONFIG_DIR` | Optional override for Claude Code auth directory. Defaults to `~/.claude`. | Executing Claude |
 | `CTF_HARNESS_CODEX_HOME` | Optional override for Codex auth directory. Defaults to `~/.codex`. | Executing Codex |
+| `CTF_HARNESS_AGENT_MCP_URL` | MCP HTTP URL handed to dashboard-launched agents. `start_full.bat` defaults it to `http://127.0.0.1:8000/mcp`. | CTFd mode backend bridge |
+| `CTF_HARNESS_START_AGENT_MCP` | Set to `0` to stop `start_full.bat` from starting the host MCP HTTP backend. | CTFd mode backend bridge |
 
 > **Note**: Do not commit the `.env` file to version control.
 
@@ -114,7 +116,7 @@ Starts optional streamable HTTP MCP mode for local multi-client workflows. This 
 ```bat
 start_full.bat
 ```
-Starts the CTFd dashboard with backend paths/env wired to this repo.
+Starts the CTFd dashboard with backend paths/env wired to this repo. By default it also starts a host-owned loopback MCP HTTP backend at `http://127.0.0.1:8000/mcp`, sets `CTF_HARNESS_AGENT_MCP_URL`, and gives dashboard-launched Claude/Codex agents a `ctfsolver` MCP server without mounting the host Docker socket into the agent container.
 
 ### Non-CTFd Challenges
 Use non-CTFd mode when a challenge is not on CTFd. In this mode, your AI IDE/CLI is the MCP client and calls the backend tools directly.
@@ -187,7 +189,12 @@ Useful MCP tools for non-CTFd mode:
 - `set_target_scope`, `get_target_scope`, `check_target_scope`: control authorized network targets.
 - `suggest_next_tools`: rank the next likely tools from description, files, target, and findings.
 - `triage_artifact`: hash a file, infer type/category, sample strings safely, log evidence, and recommend next tools.
-- `ctfsolver://inventory`, `ctfsolver://playbooks`, `ctfsolver://skills`: read-only MCP resources for client context.
+- `select_solver_templates`, `get_solver_template`: choose mobile, reverse, pwn, crypto, number-theory, and forensics solver templates.
+- `score_playbooks`, `get_best_playbook`: rank playbooks/workflows with prerequisites, expected artifacts, failure branches, and next actions.
+- `get_case_resource_context`: return files, notes, findings, evidence logs, playbooks, and writeups for non-CTFd case context.
+- `run_apktool`, `run_jadx`, `run_ilspycmd`, `run_pyinstxtractor`: optional lazy mobile and managed-code reverse-engineering wrappers.
+- `run_katana`, `run_arjun`, `run_linkfinder`, `run_git_dumper`, `run_gitleaks`, `run_schemathesis`, `run_graphql_cop`, `run_capinfos`: crawler, parameter, secret leak, API, GraphQL, and PCAP metadata helpers used by scored workflows.
+- `ctfsolver://inventory`, `ctfsolver://playbooks`, `ctfsolver://challenge-files`, `ctfsolver://notes`, `ctfsolver://findings`, `ctfsolver://evidence-logs`, `ctfsolver://writeups`, `ctfsolver://context`, `ctfsolver://skills`: read-only MCP resources for client context.
 
 Common MCP client locations vary by app:
 
@@ -219,6 +226,8 @@ uv run streamlit run streamlit_app.py
 ```
 *Navigate to the local URL (typically `http://localhost:8501`) provided in your terminal.*
 
+Prefer `start_full.bat` on Windows when you want CTFd-mode agents to use the absorbed backend tools. Direct `uv run streamlit ...` still works, but it only gives agents the MCP backend if you start `start_backend.bat --http` yourself and set `CTF_HARNESS_AGENT_MCP_URL`.
+
 ### Running the Test Suite
 The repository maintains a robust local test suite encompassing utilities, API retry mechanics, and workspace state generation. To run all tests and verify the system health:
 ```bash
@@ -238,7 +247,7 @@ uv run pip-audit
 ```
 
 ### Absorbed Toolkit
-The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active manifest currently tracks 94 MCP tools, 60 registry tools, 33 skill docs, 7 Dockerfile entries, and 2 schema files.
+The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active manifest currently tracks 114 MCP tools, 72 registry tools, 33 skill docs, 8 Dockerfile entries, and 2 schema files.
 
 Troubleshooting:
 
@@ -247,5 +256,6 @@ Troubleshooting:
 - MCP client cannot launch: regenerate `mcp.local.json` and paste that exact config into the client.
 - Backend appears hung: stdio MCP servers wait for JSON-RPC on stdin; validate with MCP Inspector or `start_backend.bat --smoke`.
 - Need multiple local MCP clients: use `start_backend.bat --http --port 8000 --path /mcp`, then point clients at `http://127.0.0.1:8000/mcp`.
+- Dashboard agent cannot reach backend MCP: use `start_full.bat`; if you started Streamlit manually, also start `start_backend.bat --http --port 8000 --path /mcp` and set `CTF_HARNESS_AGENT_MCP_URL`.
 - Network scan blocked: call `set_target_scope` with the authorized CTF host, URL, IP, or CIDR first.
 - Windows path problem: use absolute paths in `mcp.local.json`, and keep challenge files outside OneDrive when Docker needs to mount them.

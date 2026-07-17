@@ -31,11 +31,14 @@ def test_discover_image_definitions_groups_registry_binaries() -> None:
     by_image = {definition.image: definition for definition in definitions}
 
     assert "ctftoolkit/ctf-tools" in by_image
+    assert "ctftoolkit/ctf-mobile" in by_image
     assert "ctftoolkit/ctf-sage" in by_image
     assert by_image["ctftoolkit/ctf-tools"].dockerfile == "docker/ctf-tools/Dockerfile"
     assert by_image["ctftoolkit/ctf-tools"].service == "ctf-tools"
     assert "nmap" in by_image["ctftoolkit/ctf-tools"].expected_binaries
     assert "nuclei" in by_image["ctftoolkit/ctf-tools"].expected_binaries
+    assert "jadx" in by_image["ctftoolkit/ctf-mobile"].expected_binaries
+    assert by_image["ctftoolkit/ctf-mobile"].lazy is True
     assert by_image["ctftoolkit/ctf-sage"].lazy is True
 
 
@@ -62,7 +65,7 @@ def test_status_matrix_uses_fake_docker_inspect_and_marks_missing_stale(monkeypa
             return subprocess.CompletedProcess(argv, 0, "27.5.0\n", "")
         if len(argv) == 4 and argv[:3] == ("docker", "image", "inspect"):
             image = argv[3]
-            if image == "ctftoolkit/ctf-sage":
+            if image in {"ctftoolkit/ctf-mobile", "ctftoolkit/ctf-sage"}:
                 return subprocess.CompletedProcess(argv, 1, "", "No such image: ctftoolkit/ctf-sage")
             payload = [
                 {
@@ -86,6 +89,8 @@ def test_status_matrix_uses_fake_docker_inspect_and_marks_missing_stale(monkeypa
     assert by_image["ctftoolkit/ctf-tools"].digest == "sha256:" + ("b" * 64)
     assert by_image["ctftoolkit/ctf-tools"].stale is True
     assert "changed after local image was created" in by_image["ctftoolkit/ctf-tools"].stale_reason
+    assert by_image["ctftoolkit/ctf-mobile"].exists is False
+    assert by_image["ctftoolkit/ctf-mobile"].missing is True
     assert by_image["ctftoolkit/ctf-sage"].exists is False
     assert by_image["ctftoolkit/ctf-sage"].missing is True
 

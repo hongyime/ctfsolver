@@ -12,13 +12,19 @@ def test_inventory_resource_reports_backend_counts() -> None:
     payload = json.loads(server.resource_inventory())
     counts = payload["counts"]
 
-    assert counts["mcp_tools"] >= 94
-    assert counts["registry_tools"] >= 60
+    assert counts["mcp_tools"] >= 114
+    assert counts["registry_tools"] >= 72
     assert counts["skill_docs"] >= 33
-    assert counts["dockerfiles"] >= 6
+    assert counts["dockerfiles"] >= 8
     assert counts["schemas"] >= 2
     assert "run_backend_smoke" in payload["inventory"]["mcp_tools"]
+    assert "run_graphql_cop" in payload["inventory"]["mcp_tools"]
+    assert "run_jadx" in payload["inventory"]["mcp_tools"]
+    assert "run_katana" in payload["inventory"]["mcp_tools"]
     assert "set_target_scope" in payload["inventory"]["mcp_tools"]
+    assert "score_playbooks" in payload["inventory"]["mcp_tools"]
+    assert "select_solver_templates" in payload["inventory"]["mcp_tools"]
+    assert "simulate_structured_tool_result" in payload["inventory"]["mcp_tools"]
     assert "suggest_next_tools" in payload["inventory"]["mcp_tools"]
     assert "triage_artifact" in payload["inventory"]["mcp_tools"]
 
@@ -35,6 +41,48 @@ def test_playbook_and_skill_resources_are_available() -> None:
     assert "skills/web/ctf-web-sqli.md" in skills["paths"]
     assert any(chain["chain_id"] == "web_recon" for chain in workflow_chains)
     assert any(pack["pack_id"] == "mobile" for pack in tool_packs)
+
+
+def test_case_context_resources_are_available(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    case_dir = workspace / "challenges" / "demo-case"
+    (case_dir / "files").mkdir(parents=True)
+    (case_dir / "artifacts").mkdir()
+    (case_dir / "metadata.json").write_text(
+        json.dumps({"name": "Demo Case", "category": "web"}),
+        encoding="utf-8",
+    )
+    (case_dir / "state.json").write_text(
+        json.dumps({"notes": ["state note"]}),
+        encoding="utf-8",
+    )
+    (case_dir / "WRITEUP.md").write_text(
+        "# Demo Case\n\n## Notes\n\n- try admin cookie\n\n## Findings\n\n- found login bypass\n",
+        encoding="utf-8",
+    )
+    (case_dir / "files" / "app.py").write_text("print('ctf')\n", encoding="utf-8")
+    evidence_dir = workspace / "evidence"
+    evidence_dir.mkdir(parents=True)
+    evidence_dir.joinpath("events.jsonl").write_text(
+        json.dumps({"challenge_id": "demo-case", "event_type": "tool_result", "tool": "file"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(server, "_workspace_root", lambda: workspace)
+
+    files = json.loads(server.resource_challenge_files())
+    notes = json.loads(server.resource_notes())
+    evidence = json.loads(server.resource_evidence_logs())
+    writeups = json.loads(server.resource_writeups())
+    context = json.loads(server.resource_context())
+
+    assert files["files"][0]["path"] == "files/app.py"
+    assert {"try admin cookie", "state note"} <= {item["text"] for item in notes["notes"]}
+    assert evidence["events"][0]["tool"] == "file"
+    demo_writeup = next(
+        item for item in writeups["writeups"] if item["case"].get("case_id") == "demo-case"
+    )
+    assert demo_writeup["writeup_exists"] is True
+    assert any(item["path"] == "files/app.py" for item in context["challenge_files"]["files"])
 
 
 def test_category_prompts_include_operational_guidance() -> None:
@@ -144,6 +192,58 @@ async def test_suggest_next_tools_mcp_wrapper_returns_ranked_json() -> None:
 
 
 @pytest.mark.asyncio
+async def test_solver_template_and_scored_playbook_mcp_wrappers(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server, "_workspace_root", lambda: tmp_path / "workspace")
+
+    selected_templates = json.loads(
+        await server.select_solver_templates(
+            description="Android APK with classes.dex and Kotlin validation",
+            category="reverse",
+            files="challenge.apk",
+            limit=3,
+        )
+    )
+    template = json.loads(await server.get_solver_template(selected_templates[0]["template_id"]))
+    mobile_templates = json.loads(await server.list_solver_templates(category="mobile"))
+    scored = json.loads(
+        await server.score_playbooks(
+            description="SQL injection challenge; no web endpoints found",
+            category="web",
+            target="https://challenge.local",
+            failures="no web endpoints found",
+        )
+    )
+    best = json.loads(
+        await server.get_best_playbook(
+            description="Packet capture has DNS but no HTTP traffic",
+            category="forensics",
+            files="capture.pcapng",
+            failures="pcap has no HTTP",
+        )
+    )
+    branches = json.loads(await server.list_playbook_failure_branches())
+    structured = json.loads(
+        await server.simulate_structured_tool_result(
+            tool="file",
+            args="sample.bin",
+            challenge_id="demo-case",
+            target="sample.bin",
+            record_evidence=True,
+        )
+    )
+
+    assert selected_templates[0]["template_id"] == "mobile_android_static_reverse"
+    assert template["category"] == "mobile"
+    assert all(item["category"] == "mobile" for item in mobile_templates)
+    assert scored[0]["score"] > 0
+    assert scored[0]["prerequisites"]
+    assert best["failure_branches"]
+    assert any(branch["id"] == "no_web_endpoints_found" for branch in branches)
+    assert structured["result"]["ok"] is True
+    assert structured["evidence"]["challenge_id"] == "demo-case"
+
+
+@pytest.mark.asyncio
 async def test_triage_artifact_mcp_wrapper_records_evidence(tmp_path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     sample = workspace / "files" / "image.png"
@@ -157,7 +257,7 @@ async def test_triage_artifact_mcp_wrapper_records_evidence(tmp_path, monkeypatc
     assert payload["suffix"] == ".png"
     assert "png image" in payload["type_hints"]
     assert payload["recommended_next_tools"]
-    assert "path escapes workspace" in blocked
+    assert "outside workspace" in blocked
 
     events_path = workspace / "evidence" / "events.jsonl"
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]

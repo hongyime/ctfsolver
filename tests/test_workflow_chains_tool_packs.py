@@ -98,7 +98,7 @@ def test_tool_pack_metadata_validates_and_stays_opt_in() -> None:
 
     for pack in TOOL_PACKS:
         assert pack.tools
-        assert pack.docker_image_hint.startswith("ctfsolver/")
+        assert pack.docker_image_hint.startswith(("ctfsolver/", "ctftoolkit/"))
         assert pack.enabled_by_default is False
 
 

@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
+    gitleaks \
+    golang-go \
     python3 \
     python3-pip \
     python3-venv \
@@ -49,7 +51,31 @@ RUN pip3 install --break-system-packages \
     lxml \
     urllib3 \
     pycryptodome \
-    xmltodict
+    xmltodict \
+    arjun \
+    git-dumper \
+    schemathesis
+
+# LinkFinder is distributed as a GitHub tool, not a PyPI package.
+RUN git clone --depth 1 https://github.com/GerbenJavado/LinkFinder.git /opt/LinkFinder \
+    && pip3 install --break-system-packages -r /opt/LinkFinder/requirements.txt \
+    && printf '#!/bin/sh\nexec python3 /opt/LinkFinder/linkfinder.py "$@"\n' > /usr/local/bin/linkfinder \
+    && chmod +x /usr/local/bin/linkfinder
+
+# GraphQL Cop's PyPI name is a placeholder; install the actual upstream CLI.
+RUN git clone --depth 1 https://github.com/dolevf/graphql-cop.git /opt/graphql-cop \
+    && pip3 install --break-system-packages simplejson==3.17.6 termcolor==2.2.0 \
+    && printf '#!/bin/sh\nexec python3 /opt/graphql-cop/graphql-cop.py "$@"\n' > /usr/local/bin/graphql-cop \
+    && chmod +x /usr/local/bin/graphql-cop
+
+# ProjectDiscovery Katana is not consistently packaged in Kali; use the
+# upstream release binary instead of compiling a large Go dependency graph.
+ARG KATANA_VERSION=1.6.1
+RUN wget -q -O /tmp/katana.zip \
+      "https://github.com/projectdiscovery/katana/releases/download/v${KATANA_VERSION}/katana_${KATANA_VERSION}_linux_amd64.zip" \
+    && python3 -c "import pathlib, zipfile; z=zipfile.ZipFile('/tmp/katana.zip'); n=next(n for n in z.namelist() if n == 'katana' or n.endswith('/katana')); pathlib.Path('/usr/local/bin/katana').write_bytes(z.read(n))" \
+    && chmod +x /usr/local/bin/katana \
+    && rm -f /tmp/katana.zip
 
 # jwt_tool (JWT analysis/attacks) - clone + deps (not packaged in Kali)
 RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool \

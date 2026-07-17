@@ -4,7 +4,7 @@ Cross-platform image builder that surfaces real Docker errors (unlike the
 legacy setup.bat / setup.sh which silently swallowed stderr with `2>nul`).
 
 Usage:
-    python scripts/build_images.py                  # build all 5 images
+    python scripts/build_images.py                  # build all 5 core images
     python scripts/build_images.py ctf-tools        # build a single image
     python scripts/build_images.py --no-cache       # rebuild from scratch
     python scripts/build_images.py --check          # only verify, do not build
@@ -30,8 +30,8 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-import docker
-from docker.errors import APIError, BuildError, DockerException
+import docker  # noqa: E402
+from docker.errors import APIError, BuildError, DockerException  # noqa: E402
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -49,11 +49,13 @@ IMAGES: list[tuple[str, str]] = [
 
 # Heavy, lazy-built-only images (UPGRADE_PLAN.md §6). Excluded from the default
 # build-all so a fresh clone is not forced to build ~2.5GB of SageMath. Built only
-# when named explicitly (e.g. `python scripts/build_images.py ctf-sage`) or lazily
-# on first run_sage use.
+# when named explicitly (e.g. `python scripts/build_images.py ctf-sage ctf-mobile`)
+# or lazily on first matching tool use.
 LAZY_IMAGES: list[tuple[str, str]] = [
+    ("ctftoolkit/ctf-mobile", "docker/ctf-mobile/Dockerfile"),
     ("ctftoolkit/ctf-sage", "docker/ctf-sage/Dockerfile"),
 ]
+LAZY_IMAGE_TAGS = {tag for tag, _ in LAZY_IMAGES}
 
 # All known images (core + lazy) for selection/--check.
 ALL_IMAGES: list[tuple[str, str]] = IMAGES + LAZY_IMAGES
@@ -189,8 +191,8 @@ def main() -> int:
     args = parser.parse_args()
 
     client = get_client()
-    # Selection: explicit names may target any known image (incl. lazy ctf-sage);
-    # default build-all uses core IMAGES only (ctf-sage is lazy-built per §6).
+    # Selection: explicit names may target any known image (including lazy
+    # ctf-sage/ctf-mobile); default build-all uses core IMAGES only.
     if args.names:
         targets = select(ALL_IMAGES, args.names)
     elif args.check:
@@ -205,12 +207,21 @@ def main() -> int:
 
     if args.check:
         any_missing = False
+        explicit_check = bool(args.names)
         for tag, _ in targets:
             present = image_exists(client, tag)
-            mark = green("[OK]") if present else red("[X] ")
-            label = "present" if present else "MISSING"
+            lazy = tag in LAZY_IMAGE_TAGS
+            if present:
+                mark = green("[OK]")
+                label = "present"
+            elif lazy and not explicit_check:
+                mark = yellow("[~] ")
+                label = "MISSING (lazy; build explicitly when needed)"
+            else:
+                mark = red("[X] ")
+                label = "MISSING"
             print(f"  {mark} {tag:<32} {label}")
-            if not present:
+            if not present and (explicit_check or not lazy):
                 any_missing = True
         return 1 if any_missing else 0
 

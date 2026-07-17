@@ -2,13 +2,14 @@
 #
 #   docker compose build            # build the 5 core images (friend's first-run)
 #   docker compose build ctf-sage   # also build the heavy lazy-only SageMath image
+#   docker compose build ctf-mobile # also build optional mobile/managed-code tools
 #
 # These services exist ONLY to build images (the toolkit runs containers ad-hoc via
 # the Docker SDK, not via compose up). Image tags match docker_runner.TOOL_IMAGES.
 #
-# ctf-sage is under the "heavy" profile so a plain `docker compose build` does NOT
-# pull the ~2.5GB Sage image (UPGRADE_PLAN §6: lazy-built only). Build it explicitly
-# or let the server lazy-build it on first run_sage use.
+# ctf-sage and ctf-mobile are under the "heavy" profile so a plain
+# `docker compose build` does NOT pull their larger language/tooling stacks. Build
+# them explicitly or let the server lazy-build them on first use.
 
 services:
   ctf-tools:
@@ -47,3 +48,10 @@ services:
       context: .
       dockerfile: docker/ctf-sage/Dockerfile
     image: ctftoolkit/ctf-sage
+
+  ctf-mobile:
+    profiles: ["heavy"]
+    build:
+      context: .
+      dockerfile: docker/ctf-mobile/Dockerfile
+    image: ctftoolkit/ctf-mobile

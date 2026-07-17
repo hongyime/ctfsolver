@@ -67,6 +67,8 @@ Target shape:
 - Network-capable tools must have an explicit target scope model before broader autonomous use.
 - Non-CTFd mode should expose challenge state, files, findings, playbooks, and reusable workflows through MCP-native tools/resources/prompts where supported.
 - New tool packs should be added only with registry coverage, Docker image coverage, and a test or probe that proves the expected binary is available.
+- Current generated manifest must verify at least 114 MCP tools, 72 registry tools, 33 skill Markdown files, 8 Dockerfile entries, and 2 schema files.
+- CTFd-mode dashboard agents must receive backend MCP access through a host-owned HTTP MCP server/config handoff, without mounting the host Docker socket into agent containers.
 
 ## T
 
@@ -88,37 +90,37 @@ Target shape:
 | T14 | x | Document non-CTFd MCP setup steps and prompt examples for future users. |
 | T15 | x | Add per-clone MCP config generation and missing-auth guidance. |
 | T16 | x | Add `ctfsolver doctor` checks for Python, uv, Docker, MCP import, registry, images, auth, env, paths, and workspace permissions. |
-| T17 | ~ | Add backend MCP smoke tests for tool listing, health checks, environment checks, challenge creation, challenge status, and one safe offline file tool. |
+| T17 | x | Add backend MCP smoke tests for tool listing, health checks, environment checks, challenge creation, challenge status, and one safe offline file tool. |
 | T18 | x | Add a generated preservation manifest for MCP tools, registry tools, skill docs, Dockerfiles, schemas, launchers, and copied toolkit assets. |
-| T19 | ~ | Add a structured tool result schema and migrate high-value backend paths toward consistent JSON output. |
-| T20 | ~ | Add evidence logging for commands, targets, file hashes, results, timestamps, container images, and challenge IDs. |
+| T19 | x | Add a structured tool result schema and migrate high-value backend paths toward consistent JSON output. |
+| T20 | x | Add evidence logging for commands, targets, file hashes, results, timestamps, container images, and challenge IDs. |
 | T21 | x | Add target scope tools and scope enforcement for network-capable backend tools. |
-| T22 | ~ | Harden workspace file path handling for traversal, Windows normalization, and artifact ingestion safety. |
+| T22 | x | Harden workspace file path handling for traversal, Windows normalization, and artifact ingestion safety. |
 | T23 | x | Add Docker image status matrix with build state, expected binaries, image digests, and stale/missing markers. |
 | T24 | x | Add CI verification for tests, lock checks, dependency checks, secret scan, imports, and non-Docker MCP smoke checks. |
 | T25 | x | Add `suggest_next_tools` MCP workflow routing from description, files, target, category, and prior findings. |
 | T26 | x | Add `triage_artifact` to hash files, detect type, run safe first-pass checks, record findings, and recommend next steps. |
 | T27 | x | Add case/session workflow tools for list, active selection, attach artifact, notes, solved status, and export. |
-| T28 | ~ | Expose MCP resources for challenge files, notes, findings, logs, playbooks, and writeups. |
+| T28 | x | Expose MCP resources for challenge files, notes, findings, logs, playbooks, and writeups. |
 | T29 | x | Expose MCP prompts for web, pwn, reverse engineering, crypto, forensics, OSINT, mobile, and cloud workflows. |
-| T30 | ~ | Upgrade playbooks to scored workflows with prerequisites, expected artifacts, failure handling, and branching next actions. |
+| T30 | x | Upgrade playbooks to scored workflows with prerequisites, expected artifacts, failure handling, and branching next actions. |
 | T31 | x | Add agent memory summaries per challenge with attempts, findings, failures, important files, and hypotheses. |
 | T32 | x | Add final writeup generation from evidence, notes, commands, artifacts, and final flag. |
-| T33 | ~ | Add orchestrated web recon workflow from fingerprinting through directories, params, nuclei-lite, and summary. |
-| T34 | ~ | Improve Nuclei support with template status/update, signed-template awareness, severity filtering, rate limits, and scope enforcement. |
-| T35 | ~ | Add crawler support for endpoint discovery before fuzzing. |
-| T36 | ~ | Add dedicated XSS discovery support. |
-| T37 | ~ | Add parameter discovery support. |
-| T38 | ~ | Add secret leak checks for downloaded source, exposed git data, backups, and repo-style challenges. |
-| T39 | ~ | Add API testing helpers for OpenAPI, JWT, GraphQL, auth, and session checks. |
-| T40 | . | Add mobile and managed-code reverse engineering tools and wrappers. |
-| T41 | . | Improve Ghidra automation for strings, decompile, call graph, suspicious imports, and batch summaries. |
-| T42 | . | Improve pwn workflow with exploit templates, libc resolver flow, multiarch support, and debugger helpers. |
-| T43 | . | Add crypto solver templates for RSA, LCG, MT19937, XOR, hash length extension, lattice, AES mode bugs, and padding mistakes. |
-| T44 | . | Add number theory tooling for factoring-heavy crypto challenges. |
-| T45 | . | Improve forensics coverage for network, document, archive, carving, and disk recovery challenges. |
-| T46 | ~ | Add PCAP triage workflow with protocol summary, extracted files, credentials, objects, DNS anomalies, USB HID, and timeline. |
-| T47 | ~ | Add stego workflow chaining metadata, strings, carving, image/audio stego, and spectrogram analysis. |
+| T33 | x | Add orchestrated web recon workflow from fingerprinting through directories, params, nuclei-lite, and summary. |
+| T34 | x | Improve Nuclei support with template status/update, signed-template awareness, severity filtering, rate limits, and scope enforcement. |
+| T35 | x | Add crawler support for endpoint discovery before fuzzing. |
+| T36 | x | Add dedicated XSS discovery support. |
+| T37 | x | Add parameter discovery support. |
+| T38 | x | Add secret leak checks for downloaded source, exposed git data, backups, and repo-style challenges. |
+| T39 | x | Add API testing helpers for OpenAPI, JWT, GraphQL, auth, and session checks. |
+| T40 | x | Add mobile and managed-code reverse engineering tools and wrappers. |
+| T41 | x | Improve Ghidra automation for strings, decompile, call graph, suspicious imports, and batch summaries. |
+| T42 | x | Improve pwn workflow with exploit templates, libc resolver flow, multiarch support, and debugger helpers. |
+| T43 | x | Add crypto solver templates for RSA, LCG, MT19937, XOR, hash length extension, lattice, AES mode bugs, and padding mistakes. |
+| T44 | x | Add number theory tooling for factoring-heavy crypto challenges. |
+| T45 | x | Improve forensics coverage for network, document, archive, carving, and disk recovery challenges. |
+| T46 | x | Add PCAP triage workflow with protocol summary, extracted files, credentials, objects, DNS anomalies, USB HID, and timeline. |
+| T47 | x | Add stego workflow chaining metadata, strings, carving, image/audio stego, and spectrogram analysis. |
 | T48 | x | Improve `setup_mcp.bat` to run doctor, generate config, show auth guidance, and print MCP client config paths. |
 | T49 | x | Add backend launcher flags for doctor and smoke checks. |
 | T50 | x | Add README quick paths for CTFd mode and non-CTFd MCP mode. |
@@ -140,4 +142,4 @@ Target shape:
 | B1 | x | Solver git remote contained an embedded GitHub token; remote URL sanitized. |
 | B2 | x | Solver dependency audit findings existed; lockfile refreshed. |
 | B3 | x | Solver currently launches powerful CTF agent containers; maintain the Docker-socket prohibition during toolkit integration. |
-| B4 | . | Full solver-to-toolkit runtime broker is not complete until the bridge is exercised by tests or a real challenge workflow. |
+| B4 | x | Full solver-to-toolkit runtime broker is not complete until the bridge is exercised by tests or a real challenge workflow. |

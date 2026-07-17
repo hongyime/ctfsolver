@@ -5,15 +5,18 @@ import docker
 import docker.errors
 import logging
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from .registry import (
+    derived_offline_tools as _derived_offline_tools,
+    derived_tool_images as _derived_tool_images,
+)
 from .utils.resilience import _SHUTDOWN, _interruptible_sleep
-from .utils.sanitize import sanitize_command, validate_tool_args
+from .utils.sanitize import sanitize_command
 from .utils.sudo_guard import detect_sudo_prompt, handle_sudo_prompt
-from .utils.net_guard import detect_network_failure, check_connection_allowed, is_target_reachable
+from .utils.net_guard import detect_network_failure, check_connection_allowed
 from .utils.command_whitelist import SecurityLevel
 from .platform import get_platform, PlatformType
 from .platform.windows import WindowsAdapter
@@ -37,13 +40,6 @@ else:
         adapter = LinuxAdapter()
     WORKSPACE_PATH = Path(adapter.get_default_workspace())
 
-# Tool/binary -> Docker image mapping, DERIVED from the single tool registry (Phase 3).
-# registry.py is the one source of truth; routing stays in sync automatically.
-from .registry import (
-    derived_tool_images as _derived_tool_images,
-    derived_offline_tools as _derived_offline_tools,
-)
-
 TOOL_IMAGES = _derived_tool_images()
 
 # P1-003: tools that never need network -> launched with network_disabled=True.
@@ -54,7 +50,7 @@ _OFFLINE_TOOLS = set(_derived_offline_tools())
 # prunable when idle. Excluded from list_available_images() so a 'build all' / verify
 # does not force a multi-GB Sage build on every fresh clone. Still routable via
 # TOOL_IMAGES and buildable on demand (build_image / scripts/build_images.py ctf-sage).
-_LAZY_ONLY_IMAGES = {"ctftoolkit/ctf-sage"}
+_LAZY_ONLY_IMAGES = {"ctftoolkit/ctf-mobile", "ctftoolkit/ctf-sage"}
 
 # Default timeout in seconds
 # Default per-tool timeout in seconds (wired to CTFTOOLKIT_TIMEOUT; default 300).
@@ -392,11 +388,11 @@ class DockerRunner:
                 # Stream logs while container runs — must be done before wait()
                 # because with remove=True the container is gone after exit
                 stdout_chunks = []
-                stderr_chunks = []
                 timed_out = False
 
                 try:
-                    import threading, queue as _queue
+                    import queue as _queue
+                    import threading
 
                     log_queue: _queue.Queue = _queue.Queue()
 
@@ -636,7 +632,6 @@ class DockerRunner:
 
     def pull_image(self, image: str) -> bool:
         """Pull a Docker image if not already present with exponential backoff retry."""
-        last_error = None
         for attempt in range(MAX_PULL_RETRIES):
             if _SHUTDOWN.is_set():
                 logger.info("Shutdown requested — aborting image pull.")
@@ -647,7 +642,6 @@ class DockerRunner:
                 logger.info(f"Successfully pulled Docker image: {image}")
                 return True
             except docker.errors.APIError as e:
-                last_error = e
                 if attempt < MAX_PULL_RETRIES - 1:
                     delay = INITIAL_PULL_DELAY * (PULL_BACKOFF_MULTIPLIER ** attempt)
                     logger.warning(
