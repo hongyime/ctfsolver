@@ -184,4 +184,3 @@ def test_run_container_name():
     assert run_container_name({"command": "not-a-list"}) is None
     assert run_container_name({"command": ["docker", "run", "--name"]}) is None
     assert run_container_name({}) is None
-

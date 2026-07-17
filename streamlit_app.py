@@ -11,10 +11,19 @@ from typing import Any
 
 import streamlit as st
 
-from ctf_harness_app.agents import build_tools_image, host_codex_auth_path, run_claude, run_codex
+from ctf_harness_app.agents import (
+    build_tools_image,
+    claude_env_summary,
+    codex_env_summary,
+    has_claude_auth,
+    has_codex_auth,
+    run_claude,
+    run_codex,
+)
 from ctf_harness_app.agents import prepare_claude_auth_env, prepare_codex_auth_env
 from ctf_harness_app.config import DEFAULT_OUTPUT_DIR, load_dotenv
 from ctf_harness_app.ctfd import CTFdClient
+from ctf_harness_app.toolkit import toolkit_status_snapshot
 from ctf_harness_app.workspace import (
     collect_dashboard,
     download_challenges,
@@ -208,26 +217,36 @@ def render_sidebar(harness: dict[str, Any]) -> None:
     ctfd_url = st.sidebar.text_input("CTFd URL", value="https://ctfd.nusgreyhats.org/challenges")
 
     token_state = "configured" if os.environ.get("CTFD_TOKEN") else "missing"
-    claude_state = "configured" if (
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-        or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-    ) else "missing"
-    codex_state = "configured" if (
-        os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("CODEX_ACCESS_TOKEN")
-        or host_codex_auth_path().exists()
-    ) else "missing"
+    claude_state = "configured" if has_claude_auth() else "missing"
+    codex_state = "configured" if has_codex_auth() else "missing"
+    toolkit_state = toolkit_status_snapshot()
     st.sidebar.markdown(
         " ".join(
             [
                 chip(f"CTFd {token_state}", "green" if token_state == "configured" else "red"),
                 chip(f"Claude {claude_state}", "green" if claude_state == "configured" else "red"),
                 chip(f"Codex {codex_state}", "green" if codex_state == "configured" else "red"),
+                chip(
+                    f"Toolkit {toolkit_state['state']}",
+                    "green" if toolkit_state["ok"] else "yellow",
+                ),
             ]
         ),
         unsafe_allow_html=True,
     )
+    st.sidebar.caption(
+        "Toolkit: "
+        f"MCP {toolkit_state['mcp_tools']}, "
+        f"registry {toolkit_state['registry_tools'] or 0}, "
+        f"skills {toolkit_state['skill_files']}"
+    )
+    if claude_state == "missing" or codex_state == "missing":
+        st.sidebar.caption(
+            "Agent auth: "
+            f"Claude: {claude_env_summary()}; "
+            f"Codex: {codex_env_summary()}. "
+            "Sign in with the local CLI or set API keys in .env."
+        )
     st.sidebar.divider()
     st.session_state["compact_mode"] = st.sidebar.toggle(
         "Compact mode",

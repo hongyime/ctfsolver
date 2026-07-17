@@ -1,0 +1,37 @@
+# WSL2 Configuration Template for CTF Toolkit
+# 
+# Save this file as: %USERPROFILE%\.wslconfig (Windows)
+# Or: ~/.wslconfig (Linux home directory when using WSL)
+#
+# This configuration optimizes WSL2 for running Docker containers
+# and CTF Toolkit workloads.
+
+[wsl2]
+# Memory allocation - adjust based on your system
+# Recommended: 50% of total system RAM for CTF work
+memory=8GB
+
+# Processor allocation
+processors=4
+
+# Swap file size (for memory-intensive tools like hashcat)
+swap=4GB
+
+# Enable nested virtualization (required for some CTF tools)
+nestedVirtualization=true
+
+# Networking mode - use mirrored for better compatibility
+networkingMode=mirrored
+
+# Auto-reclaim memory when WSL2 is idle
+autoMemoryReclaim=gradual
+
+# Debug console (uncomment for troubleshooting)
+# debugConsole=true
+
+[experimental]
+# Enable sparse VHD files for smaller disk usage
+sparseVhd=true
+
+# Auto-stop WSL when idle
+autoStop=true

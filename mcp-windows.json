@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "ctfsolver": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "X:\\01 REPOSITORIES\\ctfsolver",
+        "run",
+        "python",
+        "-m",
+        "ctf_core.server"
+      ],
+      "env": {
+        "CTFTOOLKIT_WORKSPACE": "X:\\01 REPOSITORIES\\ctfsolver\\workspace",
+        "CTFTOOLKIT_DB_PATH": "X:\\01 REPOSITORIES\\ctfsolver\\ctf_state.db"
+      }
+    }
+  }
+}

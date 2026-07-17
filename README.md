@@ -5,9 +5,15 @@
 ## 1. Project Overview
 This repository contains a local Streamlit dashboard and testing harness designed to bridge the gap between Capture The Flag (CTF) platforms and autonomous Large Language Model agents. It automates the extraction of challenges from CTFd, mounts them into isolated, tool-rich Docker containers, and manages the lifecycle of AI agents (Claude Code or Codex) attempting to solve them. Telemetry, active state tracking, and parsed execution logs are rendered in the frontend dashboard.
 
+`ctfsolver` has two modes:
+- **CTFd mode**: browser dashboard for CTFd challenge import and agent runs.
+- **Non-CTFd mode**: MCP backend server for direct tool use by Claude/Codex-compatible MCP clients.
+
+Internal package/env names such as `ctf_core` and `CTFTOOLKIT_*` are retained for compatibility.
+
 ## 2. Prerequisites
 Ensure the following tools are installed on the host system:
-- **Python**: `>=3.11`
+- **Python**: `>=3.12`
 - **Docker Engine**: Required to build the custom `Dockerfile.ctf-tools` image and spawn per-challenge containers.
 - **uv**: Python package and project manager (recommended over standard `pip` for rapid virtual environment caching).
 
@@ -25,8 +31,23 @@ The application relies strictly on environment variables for API authentication 
 | `OPENAI_API_KEY` | Your OpenAI platform API key. | Executing Codex |
 | `CODEX_ACCESS_TOKEN` | Direct access token for the Codex engine. | Executing Codex |
 | `CTF_HARNESS_CODEX_MODEL`| Model override (defaults to `gpt-5.4`). | Executing Codex |
+| `CTF_HARNESS_CLAUDE_CONFIG_DIR` | Optional override for Claude Code auth directory. Defaults to `~/.claude`. | Executing Claude |
+| `CTF_HARNESS_CODEX_HOME` | Optional override for Codex auth directory. Defaults to `~/.codex`. | Executing Codex |
 
 > **Note**: Do not commit the `.env` file to version control.
+
+Claude and Codex can also use their normal local CLI logins. If `~/.claude/.credentials.json`
+or `~/.codex/auth.json` exists, the harness copies only the relevant auth file into the
+per-challenge container home for the matching agent.
+
+If local auth is missing, users have two options:
+- Sign in with the local Claude/Codex CLI so the default auth files exist.
+- Set API credentials in `.env`: `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` for Claude, or `OPENAI_API_KEY` / `CODEX_ACCESS_TOKEN` for Codex.
+
+Missing auth is shown in:
+- `setup_mcp.bat` / `scripts/setup.py --auth-check`
+- the dashboard sidebar auth chips and caption
+- the run error if a user starts an agent without usable auth
 
 ## 4. Installation & Setup
 
@@ -39,7 +60,7 @@ The application relies strictly on environment variables for API authentication 
 2. **Synchronize dependencies:**
    The project uses `uv` for lightning-fast dependency resolution. Run the following command to sync the virtual environment with `pyproject.toml` and `uv.lock`:
    ```bash
-   uv sync
+   uv sync --all-groups
    ```
 
 3. **Build the Docker Image:**
@@ -54,7 +75,97 @@ The application relies strictly on environment variables for API authentication 
    # Open .env and add your respective tokens.
    ```
 
+5. **Generate your MCP config:**
+   On Windows:
+   ```bat
+   setup_mcp.bat
+   ```
+   Cross-platform:
+   ```bash
+   uv run python scripts/setup.py --write --auth-check
+   ```
+   This writes `mcp.local.json` for your checkout and prints whether Claude/Codex local auth is available. `mcp.local.json` is ignored by git because it contains machine-specific paths.
+
 ## 5. Usage & Testing
+
+### Windows Launchers
+From PowerShell or Explorer:
+```bat
+start_backend.bat
+```
+Smoke-tests the backend MCP server from `src/ctf_core`. Most MCP clients should start the backend themselves from their MCP config instead of you double-clicking this file.
+
+```bat
+start_full.bat
+```
+Starts the CTFd dashboard with backend paths/env wired to this repo.
+
+### Non-CTFd Challenges
+Use non-CTFd mode when a challenge is not on CTFd. In this mode, your AI IDE/CLI is the MCP client and calls the backend tools directly.
+
+Important: MCP uses stdio. Usually you do **not** start `start_backend.bat` yourself. Add the server config to your MCP client, then the client launches the backend process and talks to it over stdin/stdout.
+
+Windows config:
+
+```json
+{
+  "mcpServers": {
+    "ctfsolver": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "X:\\01 REPOSITORIES\\ctfsolver",
+        "run",
+        "python",
+        "-m",
+        "ctf_core.server"
+      ],
+      "env": {
+        "CTFTOOLKIT_WORKSPACE": "X:\\01 REPOSITORIES\\ctfsolver\\workspace",
+        "CTFTOOLKIT_DB_PATH": "X:\\01 REPOSITORIES\\ctfsolver\\ctf_state.db"
+      }
+    }
+  }
+}
+```
+
+Use [mcp-windows.json](./mcp-windows.json) as the ready-to-paste Windows version. Use [mcp.json](./mcp.json) as the portable template. For a clone on another machine, run `setup_mcp.bat` or `uv run python scripts/setup.py --write --auth-check` and paste the generated `mcp.local.json` instead of hand-editing paths.
+
+Generic setup:
+
+1. Open your AI IDE/CLI MCP settings.
+2. Add the `ctfsolver` server config above.
+3. Restart the AI app or reload MCP servers.
+4. Confirm the `ctfsolver` tools appear in the client.
+5. Ask the client to use `ctfsolver` on your local challenge files or target.
+
+Prompt examples:
+
+```text
+Use ctfsolver tools to inspect C:\CTFs\event\forensics\image.png and suggest next steps.
+```
+
+```text
+Use ctfsolver to run file, exiftool, binwalk, and strings against ./challenge.bin.
+```
+
+```text
+Use ctfsolver web tools against http://127.0.0.1:8080. Stay scoped to this CTF target.
+```
+
+Common MCP client locations vary by app:
+
+- Claude Desktop / Claude Code: add the `mcpServers` block to the app's MCP config.
+- Cursor / Windsurf / Kiro / Roo / Cline: add a custom MCP server with the same command, args, and env.
+- Your own script/tool: launch the command as a child process and speak MCP JSON-RPC over stdio.
+
+If the backend appears to hang when run directly, that is normal. It is waiting for MCP JSON-RPC messages on stdin. Use `start_backend.bat` only to smoke-test startup/imports, not as the normal way to connect an AI client.
+
+Backend state is kept here:
+
+- `workspace/`
+- `ctf_state.db`
+- `logs/`
 
 ### Running the Dashboard
 To boot the Streamlit application, execute the following from the root directory:
@@ -69,3 +180,6 @@ The repository maintains a robust local test suite encompassing utilities, API r
 uv run pytest -v
 ```
 If you encounter `ModuleNotFoundError` during tests, ensure `pyproject.toml` has `pythonpath = ["src"]` defined in its `pytest.ini_options` block (which is enabled by default).
+
+### Absorbed Toolkit
+The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active preservation test checks 71 MCP tools, 60 registry tools, 33 skill docs, 6 Dockerfiles, and 2 schema files.

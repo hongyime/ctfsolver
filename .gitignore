@@ -4,9 +4,23 @@
 !.env.example
 .codex/
 .agents/
+mcp.local.json
 
 # Runtime challenge workspaces and agent output
 challenges/
+.agent-home/
+workspace/
+downloads/
+logs/
+latest_logs/
+archived_logs/
+reports/
+backups/
+archived/
+metrics/
+*.db
+*.db-shm
+*.db-wal
 *.log
 *.tmp
 .ctf-harness-current-prompt.md
@@ -15,6 +29,9 @@ challenges/
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+build/
+dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

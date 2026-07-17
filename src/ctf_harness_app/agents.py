@@ -20,7 +20,17 @@ OUTPUT_BUFFER_LIMIT = 500_000
 
 
 def host_codex_auth_path() -> Path:
-    return Path.home() / ".codex" / "auth.json"
+    home = os.environ.get("CTF_HARNESS_CODEX_HOME") or os.environ.get("CODEX_HOME")
+    return Path(home).expanduser() / "auth.json" if home else Path.home() / ".codex" / "auth.json"
+
+
+def host_claude_config_dir() -> Path:
+    home = os.environ.get("CTF_HARNESS_CLAUDE_CONFIG_DIR") or os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(home).expanduser() if home else Path.home() / ".claude"
+
+
+def host_claude_credentials_path() -> Path:
+    return host_claude_config_dir() / ".credentials.json"
 
 
 def prepare_claude_auth_env() -> None:
@@ -38,7 +48,12 @@ def prepare_codex_auth_env() -> None:
 
 
 def has_claude_auth() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+    prepare_claude_auth_env()
+    return bool(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        or host_claude_credentials_path().exists()
+    )
 
 
 def has_codex_auth() -> bool:
@@ -51,7 +66,9 @@ def claude_env_summary() -> str:
         return "ANTHROPIC_API_KEY is set"
     if os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return "ANTHROPIC_AUTH_TOKEN is set"
-    return "no Claude auth env is set"
+    if host_claude_credentials_path().exists():
+        return "host Claude .credentials.json is available"
+    return "no Claude auth is configured"
 
 
 def claude_partial_messages_enabled() -> bool:
@@ -66,7 +83,7 @@ def codex_env_summary() -> str:
         return "host Codex OAuth auth.json is available"
     if os.environ.get("CODEX_ACCESS_TOKEN"):
         return "CODEX_ACCESS_TOKEN is set"
-    return "no Codex auth env is set"
+    return "no Codex auth is configured"
 
 
 def codex_model() -> str:
@@ -129,7 +146,15 @@ def docker_env_args(agent: str = "agent") -> list[str]:
 def mask_command(command: list[str]) -> list[str]:
     masked: list[str] = []
     mask_next = False
-    sensitive_names = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_ACCESS_TOKEN")
+    sensitive_names = (
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "OPENAI_OAUTH_TOKEN",
+        "CODEX_OAUTH_TOKEN",
+        "CODEX_ACCESS_TOKEN",
+    )
     for part in command:
         if mask_next:
             if any(part.startswith(f"{name}=") for name in sensitive_names):
@@ -280,6 +305,8 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
     home.mkdir(parents=True, exist_ok=True)
     for directory in (home / ".claude", home / ".codex", home / ".cache", home / ".local" / "state"):
         directory.mkdir(parents=True, exist_ok=True)
+    if agent == "claude" and host_claude_credentials_path().exists():
+        shutil.copy2(host_claude_credentials_path(), home / ".claude" / ".credentials.json")
     if agent == "codex" and host_codex_auth_path().exists():
         shutil.copy2(host_codex_auth_path(), home / ".codex" / "auth.json")
     name = f"ctf-{challenge_dir.name[:48]}-{agent}-{int(time.time())}"
@@ -414,7 +441,7 @@ def run_claude(challenge_dir: Path, action: str, message: str = "") -> int:
     if not has_claude_auth():
         raise HarnessError(
             "Claude auth is not configured. Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN "
-            "in .env, then rerun."
+            "in .env, or sign in with Claude Code so ~/.claude/.credentials.json exists, then rerun."
         )
     prompt = prompt_for_action(challenge_dir, action, message)
     command = docker_command(challenge_dir, claude_inner_command(action), agent="claude")
@@ -424,7 +451,10 @@ def run_claude(challenge_dir: Path, action: str, message: str = "") -> int:
 def run_codex(challenge_dir: Path, action: str, message: str = "") -> int:
     load_dotenv()
     if not has_codex_auth():
-        raise HarnessError("Codex auth is not configured. Set OPENAI_API_KEY or CODEX_ACCESS_TOKEN in .env, then rerun.")
+        raise HarnessError(
+            "Codex auth is not configured. Set OPENAI_API_KEY or CODEX_ACCESS_TOKEN in .env, "
+            "or sign in with Codex so ~/.codex/auth.json exists, then rerun."
+        )
     prompt = prompt_for_action(challenge_dir, action, message)
     command = docker_command(challenge_dir, codex_inner_command(action), agent="codex")
     return run_streaming_agent(challenge_dir, "codex", action, prompt, command, codex_env_summary(), "codex.log", "codex-last-message.txt")
