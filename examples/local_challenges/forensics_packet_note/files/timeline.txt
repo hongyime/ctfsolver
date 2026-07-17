@@ -1,0 +1,3 @@
+00:00 capture opened
+00:01 usb hid keystroke clue found
+00:02 png object mentioned for stego follow-up

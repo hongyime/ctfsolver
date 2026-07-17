@@ -34,5 +34,12 @@ if /I "%~1"=="--smoke" (
   endlocal & exit /b !ERRORLEVEL!
 )
 
+if /I "%~1"=="--http" (
+  shift /1
+  uv run python scripts\mcp_http.py %*
+  set "HTTP_EXIT=!ERRORLEVEL!"
+  endlocal & exit /b !HTTP_EXIT!
+)
+
 uv run python -m ctf_core.server %*
 endlocal

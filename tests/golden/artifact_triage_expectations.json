@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "id": "web-hidden-login",
+      "path": "examples/local_challenges/web_hidden_login/files/login_response.html",
+      "expected": {
+        "sha256": "2aa0290bfc83dcb4bcbcb7be237e94bab91c59d48026da372ee66f13201a5524",
+        "size": 396,
+        "suffix": ".html",
+        "category_hint": "web",
+        "type_hints": [
+          "text",
+          "web source"
+        ],
+        "string_samples": [
+          "<title>Toy local web challenge</title>",
+          "<p>Observed error: SQL syntax near UNION SELECT.</p>",
+          "<p>Session note: cookie name toy_jwt and hidden route /admin-preview.</p>"
+        ],
+        "recommended_tools_prefix": [
+          "run_feroxbuster",
+          "run_ffuf",
+          "run_sqlmap"
+        ],
+        "recommended_tools_include": [
+          "run_jwt_tool",
+          "run_nuclei",
+          "run_nmap"
+        ]
+      }
+    },
+    {
+      "id": "re-wasm-checker",
+      "path": "examples/local_challenges/re_wasm_checker/files/checker.wasm",
+      "expected": {
+        "sha256": "637071aa3ac83da43e4bdb2bf8dc5661745347cef23ced48668c107173d4bf19",
+        "size": 154,
+        "suffix": ".wasm",
+        "category_hint": "re",
+        "type_hints": [
+          "text",
+          "webassembly module"
+        ],
+        "string_samples": [
+          "Toy placeholder, not executable WebAssembly.",
+          "Signals: wasm webassembly wat verify function constraints z3."
+        ],
+        "recommended_tools_prefix": [
+          "run_wasm2wat",
+          "run_z3",
+          "run_angr"
+        ],
+        "recommended_tools_include": [
+          "run_binary_analysis",
+          "run_capa",
+          "run_floss"
+        ]
+      }
+    },
+    {
+      "id": "crypto-toy-rsa",
+      "path": "examples/local_challenges/crypto_toy_rsa/files/public.pem",
+      "expected": {
+        "sha256": "470b49839d0f6129354434b8cac4d6003390a1347721497a49d77b1634bb8f37",
+        "size": 115,
+        "suffix": ".pem",
+        "category_hint": "crypto",
+        "type_hints": [
+          "text",
+          "pem key",
+          "crypto material"
+        ],
+        "string_samples": [
+          "-----BEGIN PUBLIC KEY-----",
+          "Toy RSA public material only.",
+          "ciphertext = 855"
+        ],
+        "recommended_tools_prefix": [
+          "run_rsactftool",
+          "run_sage",
+          "run_z3"
+        ],
+        "recommended_tools_include": [
+          "run_lll",
+          "start_scan"
+        ]
+      }
+    },
+    {
+      "id": "pwn-stack-note",
+      "path": "examples/local_challenges/pwn_stack_note/files/service_notes.txt",
+      "expected": {
+        "sha256": "7afa87178f8289d8fadb9b08557da9c9d596fed7c925db46b391a91842ceb38b",
+        "size": 188,
+        "suffix": ".txt",
+        "category_hint": "re",
+        "type_hints": [
+          "text"
+        ],
+        "string_samples": [
+          "Toy pwn notes only.",
+          "Signals: ELF-style challenge, stack overflow, canary disabled, ROP gadget hunt, ret2libc, libc lookup, gdb debugging."
+        ],
+        "recommended_tools_prefix": [
+          "gdb_start",
+          "run_one_gadget",
+          "run_pwntools",
+          "run_ropgadget"
+        ],
+        "recommended_tools_include": [
+          "run_libc_lookup",
+          "run_patchelf",
+          "run_seccomp_tools"
+        ]
+      }
+    },
+    {
+      "id": "forensics-packet-note",
+      "path": "examples/local_challenges/forensics_packet_note/files/capture.pcap",
+      "expected": {
+        "sha256": "b1881ab3e8fd4bc2a4969f5adf07c28e1647f40254b52576b4e35be9c8318720",
+        "size": 126,
+        "suffix": ".pcap",
+        "category_hint": "forensics",
+        "type_hints": [
+          "text",
+          "pcap capture"
+        ],
+        "string_samples": [
+          "Toy placeholder, not real packet data.",
+          "Signals: pcap usb hid keystroke packet timeline dns anomaly extracted png hidden flag."
+        ],
+        "recommended_tools_prefix": [
+          "extract_usb_hid_pcap",
+          "decode_stego",
+          "run_stegseek"
+        ],
+        "recommended_tools_include": [
+          "run_zsteg",
+          "run_volatility",
+          "start_scan"
+        ]
+      }
+    }
+  ]
+}

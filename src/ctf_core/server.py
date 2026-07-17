@@ -849,6 +849,205 @@ async def triage_artifact(path: str, challenge_id: str = "") -> str:
 
 
 @mcp.tool(structured_output=False)
+async def list_cases() -> str:
+    """List persistent non-CTFd/CTFd case workspaces."""
+    from .cases import list_cases as _list_cases
+
+    return json.dumps(_list_cases(_workspace_root()), indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def set_active_case(selector: str) -> str:
+    """Set the active case by id, slug, name, category, or substring."""
+    from .cases import set_active_case as _set_active_case
+
+    try:
+        return json.dumps(_set_active_case(selector, _workspace_root()), indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def get_active_case() -> str:
+    """Return the currently active case, if one is set."""
+    from .cases import get_active_case as _get_active_case
+
+    try:
+        return json.dumps(_get_active_case(_workspace_root()), indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def attach_case_artifact(selector: str, src_path: str, dest_name: str = "") -> str:
+    """Attach a host artifact to a case's artifacts directory with path safety."""
+    from .cases import attach_artifact as _attach_artifact
+
+    try:
+        result = _attach_artifact(
+            selector,
+            src_path,
+            workspace=_workspace_root(),
+            dest_name=dest_name or None,
+        )
+        return json.dumps(result, indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def add_case_note(selector: str, note: str) -> str:
+    """Append a note to a case WRITEUP.md."""
+    from .cases import add_case_note as _add_case_note
+
+    try:
+        return json.dumps(_add_case_note(selector, note, _workspace_root()), indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def mark_case_solved(selector: str, flag: str = "") -> str:
+    """Mark a case solved and optionally record its final flag."""
+    from .cases import mark_case_solved as _mark_case_solved
+
+    try:
+        result = _mark_case_solved(selector, flag or None, _workspace_root())
+        return json.dumps(result, indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def export_case(selector: str, output_dir: str = "") -> str:
+    """Export a case into a deterministic folder with writeup and manifest."""
+    from .cases import export_case as _export_case
+
+    try:
+        result = _export_case(selector, output_dir or (_workspace_root() / "exports"), _workspace_root())
+        return json.dumps(result, indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def summarize_case_memory(selector: str, limit: int = 50) -> str:
+    """Summarize reusable agent memory for a case."""
+    from .writeups import summarize_agent_memory as _summarize_agent_memory
+
+    try:
+        result = _summarize_agent_memory(selector, _workspace_root(), limit=limit)
+        return json.dumps(result, indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def generate_case_writeup(selector: str, output_path: str = "", final_flag: str = "") -> str:
+    """Generate or write a deterministic final case writeup."""
+    from .writeups import generate_final_writeup as _generate_final_writeup
+    from .writeups import write_final_writeup as _write_final_writeup
+
+    try:
+        if output_path:
+            result = _write_final_writeup(
+                selector,
+                _workspace_root(),
+                output_path=output_path,
+                final_flag=final_flag or None,
+            )
+            return json.dumps(result, indent=2, sort_keys=True)
+        return _generate_final_writeup(selector, _workspace_root(), final_flag=final_flag or None)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def get_docker_image_status(inspect_local: bool = True) -> str:
+    """Return Docker image matrix with build/missing/stale state and expected binaries."""
+    from .docker_status import build_status_matrix
+
+    matrix = build_status_matrix(inspect_local=inspect_local)
+    return json.dumps(matrix.to_dict(), indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def plan_binary_probes(image: str = "", run: bool = False) -> str:
+    """Plan or explicitly run expected-binary probes for Docker images."""
+    from .docker_status import run_binary_probes
+
+    probes = run_binary_probes(image=image or None, run=run)
+    return json.dumps([probe.to_dict() for probe in probes], indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def get_tool_execution_policy() -> str:
+    """Return timeout, truncation, cancellation, and artifact preservation policy."""
+    from .tool_policy import load_policy
+
+    return json.dumps(load_policy().to_dict(), indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def list_workflow_chains() -> str:
+    """List declarative workflow chains for common CTF paths."""
+    from .workflow_chains import list_workflow_chains as _list_workflow_chains
+
+    return json.dumps(_list_workflow_chains(), indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def get_workflow_chain(chain_id: str) -> str:
+    """Return one declarative workflow chain by id."""
+    from .workflow_chains import get_workflow_chain as _get_workflow_chain
+
+    try:
+        return json.dumps(_get_workflow_chain(chain_id), indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
+async def select_workflow_chains(
+    description: str = "",
+    category: str = "",
+    target: str = "",
+    files: str = "",
+    limit: int = 5,
+) -> str:
+    """Select ranked declarative workflow chains for a challenge state."""
+    from .workflow_chains import select_workflow_chains as _select_workflow_chains
+
+    result = _select_workflow_chains(
+        description=description,
+        category=category,
+        target=target,
+        files=_split_user_list(files),
+        limit=limit,
+    )
+    return json.dumps(result, indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def list_tool_packs() -> str:
+    """List optional, disabled-by-default tool packs."""
+    from .tool_packs import list_tool_packs as _list_tool_packs
+
+    return json.dumps(_list_tool_packs(), indent=2, sort_keys=True)
+
+
+@mcp.tool(structured_output=False)
+async def get_tool_pack(pack_id: str) -> str:
+    """Return one optional tool pack by id."""
+    from .tool_packs import get_tool_pack as _get_tool_pack
+
+    try:
+        return json.dumps(_get_tool_pack(pack_id), indent=2, sort_keys=True)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+@mcp.tool(structured_output=False)
 async def build_images() -> str:
     """
     Build (or rebuild) every Docker image required by the CTF Toolkit.
@@ -2098,6 +2297,30 @@ def resource_skills() -> str:
     skills_root = root / "skills"
     paths = sorted(path.relative_to(root).as_posix() for path in skills_root.rglob("*.md"))
     return json.dumps({"count": len(paths), "paths": paths}, indent=2, sort_keys=True)
+
+
+@mcp.resource("ctfsolver://cases", mime_type="application/json")
+def resource_cases() -> str:
+    """Read-only list of known case workspaces."""
+    from .cases import list_cases as _list_cases
+
+    return json.dumps(_list_cases(_workspace_root()), indent=2, sort_keys=True)
+
+
+@mcp.resource("ctfsolver://workflow-chains", mime_type="application/json")
+def resource_workflow_chains() -> str:
+    """Read-only declarative workflow chain metadata."""
+    from .workflow_chains import list_workflow_chains as _list_workflow_chains
+
+    return json.dumps(_list_workflow_chains(), indent=2, sort_keys=True)
+
+
+@mcp.resource("ctfsolver://tool-packs", mime_type="application/json")
+def resource_tool_packs() -> str:
+    """Read-only optional tool-pack metadata."""
+    from .tool_packs import list_tool_packs as _list_tool_packs
+
+    return json.dumps(_list_tool_packs(), indent=2, sort_keys=True)
 
 
 def _category_prompt(category: str, challenge: str, target: str = "", files: str = "") -> str:

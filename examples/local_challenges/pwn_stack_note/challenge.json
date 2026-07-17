@@ -1,0 +1,11 @@
+{
+  "id": "pwn-stack-note",
+  "title": "Pwn Stack Note",
+  "category": "pwn",
+  "description": "Toy service notes mention stack overflow, canary status, ROP gadgets, and ret2libc workflow clues.",
+  "target": "",
+  "artifacts": [
+    "files/service_notes.txt"
+  ],
+  "safe_fixture": true
+}

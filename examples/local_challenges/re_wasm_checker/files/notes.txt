@@ -1,0 +1,1 @@
+Expected route: inspect strings, convert wasm to wat, recover verify constraints.

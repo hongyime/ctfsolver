@@ -1,0 +1,12 @@
+{
+  "id": "forensics-packet-note",
+  "title": "Forensics Packet Note",
+  "category": "forensics",
+  "description": "Toy packet notes mention PCAP, USB HID keystrokes, DNS anomalies, and an extracted PNG.",
+  "target": "",
+  "artifacts": [
+    "files/capture.pcap",
+    "files/timeline.txt"
+  ],
+  "safe_fixture": true
+}

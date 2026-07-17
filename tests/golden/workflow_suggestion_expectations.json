@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "web-hidden-login",
+      "input": {
+        "description": "Login bypass with SQL syntax error, JWT cookie, and hidden admin endpoint",
+        "category": "web",
+        "target": "http://127.0.0.1:8080",
+        "files": [
+          "login_response.html",
+          "app_notes.txt"
+        ],
+        "findings": [
+          "SQL syntax near UNION SELECT",
+          "toy_jwt",
+          "hidden route /admin-preview"
+        ]
+      },
+      "expected_tools_prefix": [
+        "run_feroxbuster",
+        "run_ffuf",
+        "run_sqlmap",
+        "run_jwt_tool"
+      ],
+      "expected_tools_include": [
+        "run_nuclei",
+        "run_nmap"
+      ],
+      "expected_categories": {
+        "run_feroxbuster": "web",
+        "run_ffuf": "web",
+        "run_sqlmap": "web",
+        "run_jwt_tool": "web"
+      }
+    },
+    {
+      "id": "re-wasm-checker",
+      "input": {
+        "description": "Reverse WebAssembly checker with exported verify function and constraints",
+        "category": "re",
+        "target": "",
+        "files": [
+          "checker.wasm",
+          "notes.txt"
+        ],
+        "findings": [
+          "wasm webassembly wat",
+          "z3 constraints"
+        ]
+      },
+      "expected_tools_prefix": [
+        "run_wasm2wat",
+        "run_z3",
+        "run_angr"
+      ],
+      "expected_tools_include": [
+        "run_binary_analysis",
+        "run_capa",
+        "run_floss"
+      ],
+      "expected_categories": {
+        "run_wasm2wat": "re",
+        "run_z3": "re",
+        "run_angr": "re"
+      }
+    },
+    {
+      "id": "crypto-toy-rsa",
+      "input": {
+        "description": "RSA public key with n, e, ciphertext, and Fermat factorization clue",
+        "category": "crypto",
+        "target": "",
+        "files": [
+          "public.pem",
+          "cipher.txt"
+        ],
+        "findings": [
+          "rsa modulus",
+          "ciphertext",
+          "fermat"
+        ]
+      },
+      "expected_tools_prefix": [
+        "run_rsactftool",
+        "run_sage",
+        "run_z3"
+      ],
+      "expected_tools_include": [
+        "run_lll",
+        "start_scan"
+      ],
+      "expected_categories": {
+        "run_rsactftool": "crypto",
+        "run_sage": "crypto",
+        "run_z3": "crypto"
+      }
+    },
+    {
+      "id": "pwn-stack-note",
+      "input": {
+        "description": "Stack overflow note with canary disabled, ROP gadget hunt, ret2libc, and libc lookup",
+        "category": "pwn",
+        "target": "",
+        "files": [
+          "service_notes.txt"
+        ],
+        "findings": [
+          "overflow",
+          "canary",
+          "rop gadget",
+          "ret2libc"
+        ]
+      },
+      "expected_tools_prefix": [
+        "gdb_start",
+        "run_one_gadget",
+        "run_pwntools",
+        "run_ropgadget"
+      ],
+      "expected_tools_include": [
+        "run_seccomp_tools",
+        "run_libc_lookup"
+      ],
+      "expected_categories": {
+        "gdb_start": "pwn",
+        "run_one_gadget": "pwn",
+        "run_pwntools": "pwn",
+        "run_ropgadget": "pwn"
+      }
+    },
+    {
+      "id": "forensics-packet-note",
+      "input": {
+        "description": "PCAP notes mention USB HID keystrokes, DNS anomaly, extracted PNG, and hidden flag",
+        "category": "forensics",
+        "target": "",
+        "files": [
+          "capture.pcap",
+          "timeline.txt"
+        ],
+        "findings": [
+          "usb hid keystroke",
+          "packet timeline",
+          "extracted png hidden flag"
+        ]
+      },
+      "expected_tools_prefix": [
+        "extract_usb_hid_pcap",
+        "decode_stego",
+        "run_stegseek",
+        "run_zsteg"
+      ],
+      "expected_tools_include": [
+        "run_volatility",
+        "start_scan",
+        "run_binary_analysis"
+      ],
+      "expected_categories": {
+        "extract_usb_hid_pcap": "forensics",
+        "decode_stego": "forensics",
+        "run_stegseek": "forensics",
+        "run_zsteg": "forensics"
+      }
+    }
+  ]
+}

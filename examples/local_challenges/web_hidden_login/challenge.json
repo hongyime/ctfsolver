@@ -1,0 +1,12 @@
+{
+  "id": "web-hidden-login",
+  "title": "Web Hidden Login",
+  "category": "web",
+  "description": "Toy login page notes mention a SQL syntax error, JWT-style session cookie, and hidden admin route.",
+  "target": "http://127.0.0.1:8080",
+  "artifacts": [
+    "files/login_response.html",
+    "files/app_notes.txt"
+  ],
+  "safe_fixture": true
+}

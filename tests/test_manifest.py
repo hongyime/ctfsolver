@@ -14,7 +14,7 @@ def test_manifest_generation_preserves_known_inventory() -> None:
     manifest = build_manifest(repo_root())
 
     assert manifest["counts"] == {
-        "mcp_tools": 77,
+        "mcp_tools": 94,
         "registry_tools": 60,
         "skill_docs": 33,
         "dockerfiles": 7,

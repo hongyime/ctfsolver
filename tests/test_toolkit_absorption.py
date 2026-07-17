@@ -36,6 +36,7 @@ def test_launchers_run_backend_and_full_stack() -> None:
     assert "%ROOT%src" in backend
     assert "python -m ctf_core.server" in backend
     assert "scripts\\mcp_smoke.py" in backend
+    assert "scripts\\mcp_http.py" in backend
     assert "streamlit run" in full
     assert "streamlit_app.py" in full
     assert "OneDrive" not in backend + full

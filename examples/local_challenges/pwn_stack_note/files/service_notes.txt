@@ -1,0 +1,3 @@
+Toy pwn notes only.
+No runnable binary or exploit script is included.
+Signals: ELF-style challenge, stack overflow, canary disabled, ROP gadget hunt, ret2libc, libc lookup, gdb debugging.

@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "expectations": {
+    "web-hidden-login-routing": {
+      "expected_challenge_category": "web",
+      "expected_triage_category": "web",
+      "suggested_tools_include": [
+        "run_sqlmap",
+        "run_jwt_tool",
+        "run_ffuf"
+      ],
+      "triage_tools_include": [
+        "run_sqlmap",
+        "run_jwt_tool",
+        "run_feroxbuster"
+      ],
+      "minimum_suggested_hits": 3,
+      "minimum_triage_hits": 3
+    },
+    "re-wasm-checker-routing": {
+      "expected_challenge_category": "re",
+      "expected_triage_category": "re",
+      "suggested_tools_include": [
+        "run_wasm2wat",
+        "run_z3",
+        "run_binary_analysis"
+      ],
+      "triage_tools_include": [
+        "run_wasm2wat",
+        "run_z3",
+        "run_binary_analysis"
+      ],
+      "minimum_suggested_hits": 3,
+      "minimum_triage_hits": 3
+    },
+    "crypto-toy-rsa-routing": {
+      "expected_challenge_category": "crypto",
+      "expected_triage_category": "crypto",
+      "suggested_tools_include": [
+        "run_rsactftool",
+        "run_sage",
+        "run_z3"
+      ],
+      "triage_tools_include": [
+        "run_rsactftool",
+        "run_sage",
+        "run_z3"
+      ],
+      "minimum_suggested_hits": 3,
+      "minimum_triage_hits": 3
+    },
+    "pwn-stack-note-routing": {
+      "expected_challenge_category": "pwn",
+      "expected_triage_category": "re",
+      "suggested_tools_include": [
+        "run_ropgadget",
+        "run_pwntools",
+        "gdb_start"
+      ],
+      "triage_tools_include": [
+        "run_ropgadget",
+        "run_pwntools",
+        "gdb_start"
+      ],
+      "minimum_suggested_hits": 3,
+      "minimum_triage_hits": 3
+    },
+    "forensics-packet-note-routing": {
+      "expected_challenge_category": "forensics",
+      "expected_triage_category": "forensics",
+      "suggested_tools_include": [
+        "extract_usb_hid_pcap",
+        "run_zsteg",
+        "start_scan"
+      ],
+      "triage_tools_include": [
+        "extract_usb_hid_pcap",
+        "run_zsteg",
+        "start_scan"
+      ],
+      "minimum_suggested_hits": 3,
+      "minimum_triage_hits": 3
+    }
+  }
+}

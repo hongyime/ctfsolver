@@ -12,7 +12,7 @@ def test_inventory_resource_reports_backend_counts() -> None:
     payload = json.loads(server.resource_inventory())
     counts = payload["counts"]
 
-    assert counts["mcp_tools"] >= 77
+    assert counts["mcp_tools"] >= 94
     assert counts["registry_tools"] >= 60
     assert counts["skill_docs"] >= 33
     assert counts["dockerfiles"] >= 6
@@ -26,11 +26,15 @@ def test_inventory_resource_reports_backend_counts() -> None:
 def test_playbook_and_skill_resources_are_available() -> None:
     playbooks = json.loads(server.resource_playbooks())
     skills = json.loads(server.resource_skills())
+    workflow_chains = json.loads(server.resource_workflow_chains())
+    tool_packs = json.loads(server.resource_tool_packs())
 
     assert isinstance(playbooks, list)
     assert len(playbooks) >= 1
     assert skills["count"] >= 33
     assert "skills/web/ctf-web-sqli.md" in skills["paths"]
+    assert any(chain["chain_id"] == "web_recon" for chain in workflow_chains)
+    assert any(pack["pack_id"] == "mobile" for pack in tool_packs)
 
 
 def test_category_prompts_include_operational_guidance() -> None:
@@ -159,3 +163,64 @@ async def test_triage_artifact_mcp_wrapper_records_evidence(tmp_path, monkeypatc
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
     assert events[0]["event_type"] == "artifact_triaged"
     assert events[0]["challenge_id"] == "demo"
+
+
+@pytest.mark.asyncio
+async def test_case_workflow_mcp_wrappers_use_workspace(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    case_dir = workspace / "challenges" / "demo-case"
+    (case_dir / "files").mkdir(parents=True)
+    (case_dir / "files" / "note.txt").write_text("demo\n", encoding="utf-8")
+    (case_dir / "WRITEUP.md").write_text(
+        "# Demo Case\n\n## Findings\n\n- Found login bypass\n\n## Solution\n\nPending\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(server, "_workspace_root", lambda: workspace)
+
+    cases = json.loads(await server.list_cases())
+    active = json.loads(await server.set_active_case("demo-case"))
+    note = json.loads(await server.add_case_note("demo-case", "Confirmed flag path"))
+    solved = json.loads(await server.mark_case_solved("demo-case", "CTF{demo}"))
+    memory = json.loads(await server.summarize_case_memory("demo-case"))
+    writeup = await server.generate_case_writeup("demo-case")
+    exported = json.loads(await server.export_case("demo-case"))
+
+    assert cases[0]["case_id"] == "demo-case"
+    assert active["case"]["case_id"] == "demo-case"
+    assert note["case_id"] == "demo-case"
+    assert solved["status"] == "solved"
+    assert memory["final_flag"] == "CTF{demo}"
+    assert "CTF{demo}" in writeup
+    assert Path(exported["export_dir"]).is_dir()
+
+
+@pytest.mark.asyncio
+async def test_docker_policy_workflow_and_tool_pack_mcp_wrappers(monkeypatch) -> None:
+    from ctf_core import docker_status
+
+    monkeypatch.setattr(docker_status, "_which", lambda command: None)
+
+    docker_matrix = json.loads(await server.get_docker_image_status())
+    probes = json.loads(await server.plan_binary_probes(image="ctftoolkit/ctf-tools"))
+    policy = json.loads(await server.get_tool_execution_policy())
+    chains = json.loads(
+        await server.select_workflow_chains(
+            description="hidden admin route and JWT cookie",
+            category="web",
+            target="https://challenge.local",
+        )
+    )
+    web_chain = json.loads(await server.get_workflow_chain("web_recon"))
+    packs = json.loads(await server.list_tool_packs())
+    mobile = json.loads(await server.get_tool_pack("mobile"))
+
+    assert docker_matrix["docker_available"] is False
+    assert docker_matrix["images"]
+    assert probes
+    assert probes[0]["status"] == "planned"
+    assert policy["default_timeout_seconds"] >= 1
+    assert chains[0]["chain_id"] == "web_recon"
+    assert "Run only against in-scope targets" in chains[0]["steps"][0]["safety_notes"][0]
+    assert web_chain["chain_id"] == "web_recon"
+    assert any(pack["pack_id"] == "mobile" for pack in packs)
+    assert mobile["enabled_by_default"] is False

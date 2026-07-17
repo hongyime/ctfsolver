@@ -107,6 +107,11 @@ Runs the lightweight non-Docker backend smoke test. This checks MCP tool invento
 It also triages a small local artifact to prove the safe offline file-analysis path works.
 
 ```bat
+start_backend.bat --http --port 8000 --path /mcp
+```
+Starts optional streamable HTTP MCP mode for local multi-client workflows. This is opt-in; stdio remains the default. The HTTP launcher only binds to loopback hosts such as `127.0.0.1` or `localhost`.
+
+```bat
 start_full.bat
 ```
 Starts the CTFd dashboard with backend paths/env wired to this repo.
@@ -233,7 +238,7 @@ uv run pip-audit
 ```
 
 ### Absorbed Toolkit
-The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active manifest currently tracks 77 MCP tools, 60 registry tools, 33 skill docs, 7 Dockerfile entries, and 2 schema files.
+The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, scripts, docs, and reference tests preserved in this repository. The active manifest currently tracks 94 MCP tools, 60 registry tools, 33 skill docs, 7 Dockerfile entries, and 2 schema files.
 
 Troubleshooting:
 
@@ -241,5 +246,6 @@ Troubleshooting:
 - Auth missing: sign in with Claude/Codex locally or set API keys in `.env`; rerun `setup_mcp.bat`.
 - MCP client cannot launch: regenerate `mcp.local.json` and paste that exact config into the client.
 - Backend appears hung: stdio MCP servers wait for JSON-RPC on stdin; validate with MCP Inspector or `start_backend.bat --smoke`.
+- Need multiple local MCP clients: use `start_backend.bat --http --port 8000 --path /mcp`, then point clients at `http://127.0.0.1:8000/mcp`.
 - Network scan blocked: call `set_target_scope` with the authorized CTF host, URL, IP, or CIDR first.
 - Windows path problem: use absolute paths in `mcp.local.json`, and keep challenge files outside OneDrive when Docker needs to mount them.

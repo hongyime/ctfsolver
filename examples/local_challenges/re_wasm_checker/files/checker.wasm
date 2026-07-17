@@ -1,0 +1,3 @@
+Toy placeholder, not executable WebAssembly.
+Signals: wasm webassembly wat verify function constraints z3.
+No machine code or exploit payload is present.

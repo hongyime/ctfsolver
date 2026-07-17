@@ -1,0 +1,12 @@
+{
+  "id": "re-wasm-checker",
+  "title": "Reverse WASM Checker",
+  "category": "re",
+  "description": "Toy checker notes mention WebAssembly, a verify function, and simple constraints.",
+  "target": "",
+  "artifacts": [
+    "files/checker.wasm",
+    "files/notes.txt"
+  ],
+  "safe_fixture": true
+}

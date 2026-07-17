@@ -1,0 +1,3 @@
+Toy fixture only.
+No server is included.
+Signals for workflow routing: login, jwt token, hidden endpoint, SQL injection.

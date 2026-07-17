@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "benchmarks": [
+    {
+      "id": "web-hidden-login-routing",
+      "challenge_id": "web-hidden-login",
+      "challenge_path": "examples/local_challenges/web_hidden_login/challenge.json",
+      "artifact_path": "examples/local_challenges/web_hidden_login/files/login_response.html",
+      "measurements": [
+        "triage_artifact",
+        "suggest_next_tools"
+      ],
+      "suggestion_input": {
+        "description": "Toy login page notes mention a SQL syntax error, JWT-style session cookie, and hidden admin route.",
+        "category": "web",
+        "target": "http://127.0.0.1:8080",
+        "files": [
+          "web-hidden-login/files/login_response.html",
+          "web-hidden-login/files/app_notes.txt"
+        ],
+        "findings": [
+          "SQL syntax near UNION SELECT",
+          "toy_jwt cookie",
+          "hidden route /admin-preview"
+        ]
+      }
+    },
+    {
+      "id": "re-wasm-checker-routing",
+      "challenge_id": "re-wasm-checker",
+      "challenge_path": "examples/local_challenges/re_wasm_checker/challenge.json",
+      "artifact_path": "examples/local_challenges/re_wasm_checker/files/checker.wasm",
+      "measurements": [
+        "triage_artifact",
+        "suggest_next_tools"
+      ],
+      "suggestion_input": {
+        "description": "Toy checker notes mention WebAssembly, a verify function, and simple constraints.",
+        "category": "re",
+        "target": "",
+        "files": [
+          "re-wasm-checker/files/checker.wasm",
+          "re-wasm-checker/files/notes.txt"
+        ],
+        "findings": [
+          "wasm webassembly wat",
+          "verify function constraints",
+          "z3"
+        ]
+      }
+    },
+    {
+      "id": "crypto-toy-rsa-routing",
+      "challenge_id": "crypto-toy-rsa",
+      "challenge_path": "examples/local_challenges/crypto_toy_rsa/challenge.json",
+      "artifact_path": "examples/local_challenges/crypto_toy_rsa/files/public.pem",
+      "measurements": [
+        "triage_artifact",
+        "suggest_next_tools"
+      ],
+      "suggestion_input": {
+        "description": "Tiny RSA public material with n, e, and ciphertext for deterministic routing tests.",
+        "category": "crypto",
+        "target": "",
+        "files": [
+          "crypto-toy-rsa/files/public.pem",
+          "crypto-toy-rsa/files/cipher.txt"
+        ],
+        "findings": [
+          "rsa modulus",
+          "ciphertext",
+          "fermat factorization"
+        ]
+      }
+    },
+    {
+      "id": "pwn-stack-note-routing",
+      "challenge_id": "pwn-stack-note",
+      "challenge_path": "examples/local_challenges/pwn_stack_note/challenge.json",
+      "artifact_path": "examples/local_challenges/pwn_stack_note/files/service_notes.txt",
+      "measurements": [
+        "triage_artifact",
+        "suggest_next_tools"
+      ],
+      "suggestion_input": {
+        "description": "Toy service notes mention stack overflow, canary status, ROP gadgets, and ret2libc workflow clues.",
+        "category": "pwn",
+        "target": "",
+        "files": [
+          "pwn-stack-note/files/service_notes.txt"
+        ],
+        "findings": [
+          "ELF-style challenge",
+          "stack overflow canary disabled",
+          "ROP gadget hunt ret2libc libc lookup"
+        ]
+      }
+    },
+    {
+      "id": "forensics-packet-note-routing",
+      "challenge_id": "forensics-packet-note",
+      "challenge_path": "examples/local_challenges/forensics_packet_note/challenge.json",
+      "artifact_path": "examples/local_challenges/forensics_packet_note/files/capture.pcap",
+      "measurements": [
+        "triage_artifact",
+        "suggest_next_tools"
+      ],
+      "suggestion_input": {
+        "description": "Toy packet notes mention PCAP, USB HID keystrokes, DNS anomalies, and an extracted PNG.",
+        "category": "forensics",
+        "target": "",
+        "files": [
+          "forensics-packet-note/files/capture.pcap",
+          "forensics-packet-note/files/timeline.txt"
+        ],
+        "findings": [
+          "pcap usb hid keystroke",
+          "dns anomaly",
+          "extracted png hidden flag"
+        ]
+      }
+    }
+  ]
+}

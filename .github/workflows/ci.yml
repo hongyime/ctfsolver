@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Windows verification
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: src
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync locked environment
+        run: uv sync --locked
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Check installed dependencies
+        run: uv run python -m pip check
+
+      - name: Static checks
+        run: |
+          uv run ruff check tests\test_examples_benchmarks.py
+          uv run python -m compileall src scripts tests
+
+      - name: Test suite
+        run: uv run pytest
+
+      - name: Prepare Docker service for doctor
+        shell: pwsh
+        run: |
+          $docker = Get-Service -Name docker -ErrorAction SilentlyContinue
+          if ($docker -and $docker.Status -ne 'Running') {
+            Start-Service docker
+            Start-Sleep -Seconds 5
+          }
+
+      - name: Backend doctor without images
+        run: uv run python scripts\doctor.py --no-images
+
+      - name: Non-Docker MCP smoke check
+        run: uv run python scripts\mcp_smoke.py --json
+
+      - name: Manifest consistency
+        run: |
+          uv run python -c "import json, pathlib, sys; from ctf_core.manifest import build_manifest; root = pathlib.Path.cwd(); committed = json.loads((root / 'toolkit_manifest.json').read_text(encoding='utf-8')); generated = build_manifest(root); sys.exit(0 if committed == generated else 1)"
+
+      - name: Lightweight secret scan
+        shell: pwsh
+        run: |
+          $patterns = @(
+            'AKIA[0-9A-Z]{16}',
+            'ASIA[0-9A-Z]{16}',
+            'ghp_[A-Za-z0-9_]{30,}',
+            'github_pat_[A-Za-z0-9_]{30,}',
+            'sk-[A-Za-z0-9]{20,}',
+            '-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----'
+          )
+
+          foreach ($pattern in $patterns) {
+            git grep -I -n -E -e $pattern -- .
+            if ($LASTEXITCODE -eq 0) {
+              throw "Secret-like pattern matched: $pattern"
+            }
+            if ($LASTEXITCODE -gt 1) {
+              exit $LASTEXITCODE
+            }
+          }
+          exit 0

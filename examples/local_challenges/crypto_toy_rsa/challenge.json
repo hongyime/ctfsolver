@@ -1,0 +1,12 @@
+{
+  "id": "crypto-toy-rsa",
+  "title": "Crypto Toy RSA",
+  "category": "crypto",
+  "description": "Tiny RSA public material with n, e, and ciphertext for deterministic routing tests.",
+  "target": "",
+  "artifacts": [
+    "files/public.pem",
+    "files/cipher.txt"
+  ],
+  "safe_fixture": true
+}
