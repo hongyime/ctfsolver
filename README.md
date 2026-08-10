@@ -259,3 +259,7 @@ Troubleshooting:
 - Dashboard agent cannot reach backend MCP: use `start_full.bat`; if you started Streamlit manually, also start `start_backend.bat --http --port 8000 --path /mcp` and set `CTF_HARNESS_AGENT_MCP_URL`.
 - Network scan blocked: call `set_target_scope` with the authorized CTF host, URL, IP, or CIDR first.
 - Windows path problem: use absolute paths in `mcp.local.json`, and keep challenge files outside OneDrive when Docker needs to mount them.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
