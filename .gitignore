@@ -3,7 +3,12 @@
 .env.*
 !.env.example
 .codex/
-.agents/
+.agents/*
+!.agents/
+!.agents/STATE.md
+!.agents/JOURNAL.md
+!.agents/handoffs/
+!.agents/handoffs/**
 mcp.local.json
 
 # Runtime challenge workspaces and agent output
