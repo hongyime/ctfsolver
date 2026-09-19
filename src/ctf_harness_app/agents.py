@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from .config import DEFAULT_CODEX_MODEL, DEFAULT_CTF_IMAGE, DEFAULT_DOCKERFILE, DEFAULT_KIRO_MODEL, DEFAULT_OPENCODE_MODEL, load_dotenv
+from .iam_key_pool import IamKey, load_pool, pool_region, select_key_for
 from .workspace import build_followup_prompt, load_challenge, record_run_finish, record_run_heartbeat, record_run_start
 from .util import HarnessError
 
@@ -298,6 +299,12 @@ def docker_env_args(agent: str = "agent") -> list[str]:
     prepare_opencode_auth_env()
     args: list[str] = []
     prefer_host_codex_auth = agent == "codex" and host_codex_auth_path().exists()
+
+    # For Bedrock-backed agents (kiro, opencode), pick an IAM key from the pool
+    # so concurrent challenges spread across different identities/rate limits.
+    # Selection is stable per (challenge, agent) via _iam_pool_key_env() called
+    # from docker_command. Here we only forward pre-set env vars; the pool
+    # override happens in docker_command via extra `-e KEY=value` args.
     for env_name in (
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
@@ -329,15 +336,48 @@ def docker_env_args(agent: str = "agent") -> list[str]:
             continue
         if agent == "opencode" and (
             env_name.startswith(("CLAUDE_CODE_", "CODEX_", "KIRO_"))
-            or env_name in {"AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"}
         ):
+            # OpenCode CAN use AWS_* creds directly (its bedrock-auth-refresh plugin path);
+            # do NOT skip AWS vars for opencode.
             continue
         if prefer_host_codex_auth and env_name == "CODEX_ACCESS_TOKEN":
             continue
+        # Skip empty-string env vars — passing e.g. AWS_BEARER_TOKEN_BEDROCK="" to
+        # the container makes boto3 try bearer auth and fail. Only forward set-and-nonempty.
         value = os.environ.get(env_name)
         if value:
             args.extend(["-e", f"{env_name}={value}"])
     return args
+
+
+def iam_pool_env_args(challenge_slug: str, agent: str) -> tuple[list[str], IamKey | None]:
+    """Select an IAM key from the pool and return `-e AWS_...` docker args.
+
+    Only fires for agents that actually use direct Bedrock SigV4 (opencode, kiro).
+    Returns (args, selected_key). If no pool exists or agent isn't a fit,
+    returns ([], None) and the container relies on other auth paths.
+    """
+    if agent not in {"opencode", "kiro"}:
+        return [], None
+    keys = load_pool()
+    if not keys:
+        return [], None
+    picked = select_key_for(challenge_slug, agent, keys)
+    if picked is None:
+        return [], None
+    region = pool_region()
+    return (
+        [
+            "-e", f"AWS_ACCESS_KEY_ID={picked.access_key_id}",
+            "-e", f"AWS_SECRET_ACCESS_KEY={picked.secret_access_key}",
+            "-e", f"AWS_REGION={region}",
+            "-e", f"AWS_DEFAULT_REGION={region}",
+            # Bedrock plugin sees ABSK-prefixed key to skip SSO; we do NOT have
+            # a bearer here, so leave AWS_BEARER_TOKEN_BEDROCK unset (empty
+            # string breaks boto3 signing — see prior debugging).
+        ],
+        picked,
+    )
 
 
 def mask_command(command: list[str]) -> list[str]:
@@ -685,6 +725,19 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
         "HOME=/root",
     ]
     command.extend(docker_env_args(agent))
+    # Overlay a pool-selected IAM key for Bedrock-backed agents so concurrent
+    # containers spread across different identities. Last-write-wins on -e in
+    # docker run, so this correctly overrides any host AWS_ACCESS_KEY_ID that
+    # docker_env_args might have forwarded.
+    pool_args, picked = iam_pool_env_args(challenge_dir.name, agent)
+    if pool_args:
+        command.extend(pool_args)
+        # Log which key was picked so debugging is easier (secret not logged).
+        (home / ".ctf-harness-iam-key.txt").write_text(
+            f"agent={agent}\nlabel={picked.label}\narn={picked.arn}\naccount={picked.account}\n"
+            f"key_id={picked.access_key_id}\n",
+            encoding="utf-8",
+        )
     command.append(image)
     command.extend(inner_command)
     return command
@@ -846,3 +899,108 @@ def run_opencode(challenge_dir: Path, action: str, message: str = "") -> int:
         "opencode.log",
         "opencode-last-message.txt",
     )
+
+
+# ---------------------------------------------------------------------------
+# Agent fallback / auto-resolution
+# ---------------------------------------------------------------------------
+
+# Fallback preference order when the caller doesn't specify an agent (or asks
+# for one whose auth is unavailable). The harness picks the first available.
+# Kiro + OpenCode benefit from the pooled IAM keys; if neither is set up,
+# fall back to Claude, then Codex.
+AGENT_FALLBACK_ORDER = ("kiro", "opencode", "claude", "codex")
+
+
+def agent_availability() -> dict[str, bool]:
+    """Snapshot of which agents currently have usable auth on this host."""
+    return {
+        "claude": has_claude_auth(),
+        "codex": has_codex_auth(),
+        "kiro": has_kiro_auth(),
+        "opencode": has_opencode_auth(),
+    }
+
+
+def resolve_available_agent(preferred: str | None = None) -> str:
+    """Pick a usable agent, honouring preference when possible.
+
+    Order:
+      1. If `preferred` is set and its auth is available, return it.
+      2. Otherwise, walk AGENT_FALLBACK_ORDER and return the first available.
+      3. If nothing is authed, raise HarnessError with the summary.
+
+    Optional override: CTF_HARNESS_AGENT_FALLBACK_ORDER (comma-separated) lets
+    you customise the walk without touching code.
+    """
+    avail = agent_availability()
+    if preferred and avail.get(preferred):
+        return preferred
+    order_env = os.environ.get("CTF_HARNESS_AGENT_FALLBACK_ORDER", "").strip()
+    order = tuple(a.strip() for a in order_env.split(",") if a.strip()) if order_env else AGENT_FALLBACK_ORDER
+    for a in order:
+        if avail.get(a):
+            return a
+    raise HarnessError(
+        "No agent is authenticated. Set at least one: "
+        f"{avail}. See README §3 for auth options."
+    )
+
+
+AGENT_DISPATCH = {
+    "claude": run_claude,
+    "codex": run_codex,
+    "kiro": run_kiro,
+    "opencode": run_opencode,
+}
+
+
+def run_auto(challenge_dir: Path, action: str, message: str = "", preferred: str | None = None) -> tuple[str, int]:
+    """Dispatch to the best-available agent. Returns (agent_used, returncode)."""
+    agent = resolve_available_agent(preferred)
+    return agent, AGENT_DISPATCH[agent](challenge_dir, action, message)
+
+
+def run_batch(
+    challenge_dirs: list[Path],
+    action: str = "start",
+    message: str = "",
+    preferred: str | None = None,
+    max_concurrent: int | None = None,
+) -> list[tuple[Path, str, int, str]]:
+    """Solve multiple challenges in parallel, each with its own container.
+
+    Uses a thread pool bounded by max_concurrent (env-configurable via
+    CTFTOOLKIT_MAX_CONCURRENT_AGENTS, default 4). Each challenge:
+      1. resolves its own agent via fallback hierarchy,
+      2. draws a distinct IAM key from the pool (deterministic via slug),
+      3. spawns its container and runs to completion.
+
+    Returns list of (challenge_dir, agent_used, returncode, err_or_empty).
+    """
+    import concurrent.futures as cf
+
+    if max_concurrent is None:
+        try:
+            max_concurrent = int(os.environ.get("CTFTOOLKIT_MAX_CONCURRENT_AGENTS", "4"))
+        except ValueError:
+            max_concurrent = 4
+    max_concurrent = max(1, max_concurrent)
+
+    results: list[tuple[Path, str, int, str]] = []
+
+    def _one(cd: Path) -> tuple[Path, str, int, str]:
+        try:
+            agent, rc = run_auto(cd, action=action, message=message, preferred=preferred)
+            return (cd, agent, rc, "")
+        except Exception as exc:  # noqa: BLE001 - surface per-challenge failure
+            return (cd, "", -1, f"{type(exc).__name__}: {exc}")
+
+    with cf.ThreadPoolExecutor(max_workers=max_concurrent) as pool:
+        futures = {pool.submit(_one, cd): cd for cd in challenge_dirs}
+        for fut in cf.as_completed(futures):
+            results.append(fut.result())
+    # Preserve input order for callers
+    order = {cd: i for i, cd in enumerate(challenge_dirs)}
+    results.sort(key=lambda r: order.get(r[0], 1_000_000))
+    return results

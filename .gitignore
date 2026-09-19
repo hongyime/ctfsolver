@@ -57,3 +57,23 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+
+
+# IAM key pool + AWS creds — MUST NEVER be committed
+bedrock-iam-key-pool.json
+bedrock-api-keys.json
+.aws/credentials
+.aws/config
+*credentials.pre-*
+*config.pre-*
+.ctf-harness-iam-key.txt
+
+# Scratch scripts (kept local, not shipped)
+_*.py
+_probe_*
+_test_*.py
+_mint_*
+_inspect_*
+_verify_*
+_discover_*
+_aws_mint*

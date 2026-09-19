@@ -246,3 +246,153 @@ def test_opencode_inner_command_probes_for_binary() -> None:
     assert "opencode" in joined
     assert "command -v opencode" in joined
     assert "run" in joined
+
+
+
+
+# ---- Agent fallback + IAM key pool tests ----
+
+
+def test_resolve_available_agent_honours_preference(tmp_path, monkeypatch) -> None:
+    """When preferred agent has auth, it wins over the fallback order."""
+    for var in ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN", "KIRO_API_KEY",
+                "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE",
+                "OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    # Only claude authed
+    claude = tmp_path / ".claude"; claude.mkdir()
+    (claude / ".credentials.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CTF_HARNESS_KIRO_DATA_DIR", str(tmp_path / "no-kiro-data"))
+    monkeypatch.setenv("CTF_HARNESS_KIRO_CONFIG_DIR", str(tmp_path / "no-kiro"))
+    monkeypatch.setenv("CTF_HARNESS_OPENCODE_HOME", str(tmp_path / "no-opencode"))
+    monkeypatch.setenv("CTF_HARNESS_CODEX_HOME", str(tmp_path / "no-codex"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    assert agents.resolve_available_agent(preferred="claude") == "claude"
+    # Fallback path: no preference, still gets claude
+    assert agents.resolve_available_agent(preferred=None) == "claude"
+
+
+def test_resolve_available_agent_walks_fallback(tmp_path, monkeypatch) -> None:
+    """When preferred is unavailable, walk AGENT_FALLBACK_ORDER."""
+    for var in ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN", "KIRO_API_KEY",
+                "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE",
+                "OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+                "CTF_HARNESS_AGENT_FALLBACK_ORDER"):
+        monkeypatch.delenv(var, raising=False)
+    codex_home = tmp_path / ".codex"; codex_home.mkdir()
+    (codex_home / "auth.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CTF_HARNESS_KIRO_DATA_DIR", str(tmp_path / "no-kiro-data"))
+    monkeypatch.setenv("CTF_HARNESS_KIRO_CONFIG_DIR", str(tmp_path / "no-kiro"))
+    monkeypatch.setenv("CTF_HARNESS_OPENCODE_HOME", str(tmp_path / "no-opencode"))
+    monkeypatch.setenv("CTF_HARNESS_CLAUDE_CONFIG_DIR", str(tmp_path / "no-claude"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    # Prefer kiro but kiro/opencode/claude are all unavailable → fall back to codex
+    assert agents.resolve_available_agent(preferred="kiro") == "codex"
+
+
+def test_resolve_available_agent_raises_when_nothing_authed(tmp_path, monkeypatch) -> None:
+    from ctf_harness_app.util import HarnessError
+    for var in ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN", "KIRO_API_KEY",
+                "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE",
+                "OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    for var in ("CTF_HARNESS_CLAUDE_CONFIG_DIR", "CTF_HARNESS_CODEX_HOME",
+                "CTF_HARNESS_KIRO_CONFIG_DIR", "CTF_HARNESS_KIRO_DATA_DIR",
+                "CTF_HARNESS_OPENCODE_HOME"):
+        monkeypatch.setenv(var, str(tmp_path / f"no-{var}"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    import pytest
+    with pytest.raises(HarnessError):
+        agents.resolve_available_agent(preferred=None)
+
+
+def test_iam_key_pool_selection_is_deterministic(tmp_path, monkeypatch) -> None:
+    """Same (challenge, agent) always picks the same key; different pairs distribute."""
+    import json
+    from ctf_harness_app.iam_key_pool import load_pool, select_key_for
+    pool_file = tmp_path / "pool.json"
+    pool_file.write_text(json.dumps({
+        "region": "ap-southeast-1",
+        "keys": [
+            {"label": f"key-{i}", "access_key_id": f"AKIA{i:016d}", "secret_access_key": f"s{i}",
+             "account": "111", "arn": f"arn:...user/key-{i}", "bedrock_ok": True}
+            for i in range(4)
+        ],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_IAM_KEY_POOL", str(pool_file))
+    keys = load_pool()
+    assert len(keys) == 4
+
+    a1 = select_key_for("0001-web-flag", "opencode", keys)
+    a2 = select_key_for("0001-web-flag", "opencode", keys)
+    assert a1 == a2  # deterministic
+
+    # Different challenges spread (statistically — with 20 slugs across 4 keys they should hit multiple)
+    picks = {select_key_for(f"chal-{i}", "opencode", keys).label for i in range(20)}
+    assert len(picks) >= 2, f"pool distribution too narrow: {picks}"
+
+
+def test_iam_pool_env_args_only_for_bedrock_agents(tmp_path, monkeypatch) -> None:
+    """iam_pool_env_args returns empty for claude/codex, entries for opencode/kiro."""
+    import json
+    pool_file = tmp_path / "pool.json"
+    pool_file.write_text(json.dumps({
+        "region": "ap-southeast-1",
+        "keys": [{"label": "k1", "access_key_id": "AKIA_TESTKEY", "secret_access_key": "SECRET",
+                  "account": "111", "arn": "arn:...user/k1", "bedrock_ok": True}],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_IAM_KEY_POOL", str(pool_file))
+
+    # Bedrock agents: get keys forwarded
+    args, picked = agents.iam_pool_env_args("chal-1", "opencode")
+    assert picked is not None and picked.label == "k1"
+    args_str = " ".join(args)
+    assert "AWS_ACCESS_KEY_ID=AKIA_TESTKEY" in args_str
+    assert "AWS_SECRET_ACCESS_KEY=SECRET" in args_str
+    assert "AWS_REGION=ap-southeast-1" in args_str
+
+    args, picked = agents.iam_pool_env_args("chal-1", "kiro")
+    assert picked is not None
+
+    # Non-Bedrock agents: no pool args
+    args, picked = agents.iam_pool_env_args("chal-1", "claude")
+    assert args == [] and picked is None
+    args, picked = agents.iam_pool_env_args("chal-1", "codex")
+    assert args == [] and picked is None
+
+
+def test_docker_command_layers_pool_keys_over_env(tmp_path, monkeypatch) -> None:
+    """docker_command must append pool-selected AWS creds after docker_env_args
+    so the pool key wins (last-write-wins on -e)."""
+    import json
+    pool_file = tmp_path / "pool.json"
+    pool_file.write_text(json.dumps({
+        "region": "ap-southeast-1",
+        "keys": [{"label": "k1", "access_key_id": "AKIA_POOL", "secret_access_key": "POOLSECRET",
+                  "account": "111", "arn": "arn:...user/k1", "bedrock_ok": True}],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_IAM_KEY_POOL", str(pool_file))
+    # Host has different creds set
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA_HOST")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "HOSTSECRET")
+
+    challenge_dir = tmp_path / "chal"
+    challenge_dir.mkdir()
+    cmd = agents.docker_command(challenge_dir, ["true"], agent="opencode")
+
+    # Find last -e AWS_ACCESS_KEY_ID=... occurrence
+    aws_positions = [i for i, a in enumerate(cmd) if isinstance(a, str) and a.startswith("AWS_ACCESS_KEY_ID=")]
+    assert len(aws_positions) >= 1
+    last = cmd[aws_positions[-1]]
+    assert last == "AWS_ACCESS_KEY_ID=AKIA_POOL", f"pool key must be last, got: {last}"
