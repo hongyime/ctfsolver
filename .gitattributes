@@ -1,0 +1,62 @@
+# Preserve byte-exact CTF fixtures — test goldens hash against these blobs.
+examples/local_challenges/**/files/**  -text
+
+# General binary extensions — never touch line endings.
+*.wasm    binary
+*.pcap    binary
+*.pcapng  binary
+*.pdf     binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.zip     binary
+*.tar     binary
+*.tar.gz  binary
+*.tgz     binary
+*.gz      binary
+*.bz2     binary
+*.xz      binary
+*.7z      binary
+*.exe     binary
+*.dll     binary
+*.so      binary
+*.dylib   binary
+*.o       binary
+*.a       binary
+*.elf     binary
+*.bin     binary
+*.class   binary
+*.jar     binary
+*.pyc     binary
+*.pyd     binary
+*.sqlite  binary
+*.sqlite3 binary
+*.db      binary
+
+# Code + text always LF, even on Windows checkout.
+*.py    text eol=lf
+*.pyi   text eol=lf
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.rst   text eol=lf
+*.txt   text eol=lf
+*.pem   text eol=lf
+*.crt   text eol=lf
+*.key   text eol=lf
+Dockerfile*     text eol=lf
+Makefile        text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf

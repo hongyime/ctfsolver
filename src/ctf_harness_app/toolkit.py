@@ -27,6 +27,14 @@ def toolkit_downloads() -> Path:
     return Path(os.environ.get("CTFTOOLKIT_DOWNLOADS") or repo_root() / "downloads")
 
 
+def _abs(raw: str | None, default: Path) -> str:
+    """Return an absolute path string: resolve relative values against repo_root()."""
+    if not raw:
+        return str(default)
+    p = Path(raw)
+    return str(p if p.is_absolute() else repo_root() / p)
+
+
 def toolkit_env(base: dict[str, str] | None = None) -> dict[str, str]:
     env = dict(base or os.environ)
     existing_pythonpath = env.get("PYTHONPATH")
@@ -35,9 +43,9 @@ def toolkit_env(base: dict[str, str] | None = None) -> dict[str, str]:
         paths.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(paths)
     env.setdefault("PYTHONUTF8", "1")
-    env.setdefault("CTFTOOLKIT_WORKSPACE", str(repo_root() / "workspace"))
-    env.setdefault("CTFTOOLKIT_DB_PATH", str(repo_root() / "ctf_state.db"))
-    env.setdefault("CTFTOOLKIT_DOWNLOADS", str(repo_root() / "downloads"))
+    env["CTFTOOLKIT_WORKSPACE"] = _abs(env.get("CTFTOOLKIT_WORKSPACE"), repo_root() / "workspace")
+    env["CTFTOOLKIT_DB_PATH"] = _abs(env.get("CTFTOOLKIT_DB_PATH"), repo_root() / "ctf_state.db")
+    env["CTFTOOLKIT_DOWNLOADS"] = _abs(env.get("CTFTOOLKIT_DOWNLOADS"), repo_root() / "downloads")
     return env
 
 
