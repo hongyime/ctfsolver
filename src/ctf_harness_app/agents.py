@@ -479,14 +479,15 @@ def codex_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FIL
 def kiro_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FILENAME}") -> list[str]:
     # Kiro CLI (Amazon) is Bedrock-backed via AWS SSO / bearer tokens.
     # We copy the host's ~/.kiro and ~/.aws into the container so the CLI can use
-    # cached SSO tokens or the configured AWS profile. Prompt goes through stdin
-    # so we don't struggle with shell quoting of multi-line CTF prompts.
+    # cached SSO tokens or the configured AWS profile. Prompt is passed as the
+    # positional INPUT arg (kiro-cli chat reads INPUT from argv, not stdin).
     model = kiro_model()
     kiro_args = ["kiro-cli", "chat", "--no-interactive", "--trust-all-tools"]
+    if action == "continue":
+        kiro_args.append("--resume")
     if model:
         kiro_args.extend(["--model", model])
     base_command = " ".join(shlex.quote(part) for part in kiro_args)
-    resume_note = "(action=continue: fresh Kiro session; Kiro does not expose --resume in CLI mode)" if action == "continue" else ""
     shell_script = (
         "export HOME=/root; "
         "export XDG_CACHE_HOME=/root/.cache; "
@@ -496,13 +497,14 @@ def kiro_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FILE
         "echo '[ctf-harness] Kiro auth env:'; "
         "env | grep -E '^(KIRO_API_KEY|AWS_BEARER_TOKEN_BEDROCK|AWS_PROFILE|AWS_REGION|AWS_DEFAULT_REGION)=' | sed 's/=.*/=<set>/' || true; "
         "if ! command -v kiro-cli >/dev/null 2>&1; then "
-        "echo '[ctf-harness] kiro-cli not found in ctf-ai-solver image; rebuild the tools image with the Kiro CLI install step, or install kiro-cli manually inside the container.'; "
+        "echo '[ctf-harness] kiro-cli not found in ctf-ai-solver image; rebuild the tools image so the Kiro installer runs.'; "
         "exit 127; "
         "fi; "
         "echo '[ctf-harness] kiro-cli:'; command -v kiro-cli; kiro-cli --version 2>&1 || true; "
         f"echo '[ctf-harness] kiro model: {shlex.quote(model)}'; "
-        f"echo {shlex.quote('[ctf-harness] ' + resume_note) if resume_note else 'true'}; "
-        f"exec {base_command} < {shlex.quote(prompt_path)}"
+        "if [ -f /root/.kiro/secrets.json ]; then echo '[ctf-harness] host kiro secrets.json mounted'; fi; "
+        "if [ -d /root/.aws/sso/cache ]; then echo '[ctf-harness] host AWS SSO cache mounted'; fi; "
+        f"exec {base_command} \"$(cat {shlex.quote(prompt_path)})\" </dev/null"
     )
     return ["sh", "-lc", shell_script]
 
