@@ -91,17 +91,26 @@ Missing auth is shown in:
    docker build -t ctf-ai-solver:latest -f Dockerfile.ctf-tools .
    ```
 
-   The image bakes in four agent CLIs: `claude`, `codex`, `opencode`. Kiro's
-   Linux binary is not on npm and Amazon distributes it as a signed tarball;
-   pass its URL at build time to include it:
-   ```bash
-   docker build -t ctf-ai-solver:latest \
-     --build-arg KIRO_CLI_URL=https://<amazon-provided-url>/kiro-cli-linux-x86_64.tar.gz \
-     -f Dockerfile.ctf-tools .
-   ```
-   If `KIRO_CLI_URL` is omitted, the build skips the Kiro CLI install; Kiro
-   agents then fail at runtime with a clear "kiro-cli not found; rebuild the
-   tools image" message.
+   The image bakes in four agent CLIs: `claude`, `codex`, `opencode`, and
+   `kiro-cli`. The Kiro CLI is installed via Amazon's canonical installer
+   (`curl -fsSL https://cli.kiro.dev/install | bash`) at build time; no extra
+   build-arg is required. In-container Kiro then uses whichever host auth the
+   harness copies in (see the auth table above).
+
+   > **Kiro auth caveat.** Kiro CLI uses AWS SSO / Builder ID device flow.
+   > The harness copies `~/.kiro` and `~/.aws/sso/cache` into the container,
+   > but the SSO token must be **fresh** (default lifespan ~8 hours) when the
+   > agent runs — Kiro CLI cannot complete a device-flow login inside a
+   > headless container. Practical options:
+   > 1. Sign in on the host with `kiro-cli chat` (or the Kiro IDE) shortly
+   >    before running a Kiro-agent challenge; the harness copies the still-
+   >    valid token into the container.
+   > 2. Provide a direct Bedrock bearer token via `AWS_BEARER_TOKEN_BEDROCK`
+   >    (or `KIRO_API_KEY`) in `.env` — the harness forwards these into the
+   >    container and skips SSO.
+   > 3. Use `AWS_PROFILE` pointing at a role/profile with static credentials
+   >    (not SSO); the harness forwards `AWS_PROFILE`, `AWS_REGION`, and
+   >    `AWS_DEFAULT_REGION` into the container.
 
 4. **Environment Setup:**
    ```bash

@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-requests \
     python3-venv \
     ruby \
+    ruby-dev \
     socat \
     strace \
     sudo \
@@ -59,33 +60,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update \
-    && for package in gobuster hydra nikto radare2 sqlmap wfuzz wordlists; do \
+    && for package in gobuster hydra nikto radare2 sqlmap wfuzz; do \
         apt-get install -y --no-install-recommends "$package" || true; \
     done \
+    && mkdir -p /usr/share/wordlists \
+    && if [ ! -f /usr/share/wordlists/rockyou.txt ]; then \
+         curl -fsSL -o /tmp/rockyou.txt.tar.gz \
+           https://github.com/zacheller/rockyou/raw/master/rockyou.txt.tar.gz \
+         && tar -xzf /tmp/rockyou.txt.tar.gz -C /usr/share/wordlists/ \
+         && rm -f /tmp/rockyou.txt.tar.gz \
+         || echo "[ctf-tools] rockyou.txt fetch failed; add it manually at /usr/share/wordlists/rockyou.txt if needed." >&2; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
 
-# Kiro CLI (Amazon Kiro - AWS Bedrock backed). No public npm package exists;
-# Amazon distributes it as a signed tarball. Pass the URL at build time:
-#   docker build --build-arg KIRO_CLI_URL=https://.../kiro-cli-linux-x86_64.tar.gz ...
-# If unset, the build skips the install with a warning and Kiro agents will
-# fail at runtime with a "kiro-cli not found" message that points here.
-ARG KIRO_CLI_URL=""
-RUN if [ -n "$KIRO_CLI_URL" ]; then \
-      set -eux; \
-      curl -fsSL "$KIRO_CLI_URL" -o /tmp/kiro-cli.tar.gz; \
-      mkdir -p /opt/kiro-cli; \
-      tar -xzf /tmp/kiro-cli.tar.gz -C /opt/kiro-cli; \
-      kiro_bin="$(find /opt/kiro-cli -maxdepth 4 -type f -name kiro-cli | head -n1)"; \
-      if [ -z "$kiro_bin" ]; then echo "kiro-cli binary not found in tarball" >&2; exit 1; fi; \
-      ln -sf "$kiro_bin" /usr/local/bin/kiro-cli; \
-      chmod +x "$kiro_bin"; \
-      rm -f /tmp/kiro-cli.tar.gz; \
-      kiro-cli --version || true; \
-    else \
-      echo "[ctf-tools] KIRO_CLI_URL not set; kiro-cli NOT installed. Kiro agents will require a rebuild with --build-arg KIRO_CLI_URL=<url>."; \
-    fi
+# Kiro CLI (Amazon Kiro - AWS Bedrock backed) via the canonical installer.
+# The installer downloads a signed zip from prod.download.cli.kiro.dev, verifies
+# its SHA256 against a manifest, and writes kiro-cli into $HOME/.local/bin.
+# We move the binaries out of /root (mode 700 blocks non-root users) into
+# /opt/kiro-cli/ and symlink them onto PATH so any container user can run them.
+# KIRO_CLI_SKIP_SETUP=1 keeps the installer non-interactive; --force skips the
+# "existing Amazon Q CLI" auto-update prompt (fresh Docker layer has neither).
+RUN set -eux; \
+    curl -fsSL https://cli.kiro.dev/install -o /tmp/kiro-cli-install.sh; \
+    chmod +x /tmp/kiro-cli-install.sh; \
+    KIRO_CLI_SKIP_SETUP=1 bash /tmp/kiro-cli-install.sh --force; \
+    rm -f /tmp/kiro-cli-install.sh; \
+    mkdir -p /opt/kiro-cli; \
+    for bin in kiro-cli kiro-cli-chat kiro-cli-term; do \
+      if [ -f "/root/.local/bin/$bin" ]; then \
+        mv "/root/.local/bin/$bin" "/opt/kiro-cli/$bin"; \
+        chmod 755 "/opt/kiro-cli/$bin"; \
+        ln -sf "/opt/kiro-cli/$bin" "/usr/local/bin/$bin"; \
+      fi; \
+    done; \
+    kiro-cli --version
+
 RUN for gem in zsteg one_gadget seccomp-tools; do \
         gem install "$gem" --no-document || true; \
     done
