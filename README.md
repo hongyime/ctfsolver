@@ -31,6 +31,15 @@ The application relies strictly on environment variables for API authentication 
 | `OPENAI_API_KEY` | Your OpenAI platform API key. | Executing Codex |
 | `CODEX_ACCESS_TOKEN` | Direct access token for the Codex engine. | Executing Codex |
 | `CTF_HARNESS_CODEX_MODEL`| Model override (defaults to `gpt-5.4`). | Executing Codex |
+| `KIRO_API_KEY` | Direct API key for Kiro (Amazon), if you have one. | Executing Kiro |
+| `AWS_BEARER_TOKEN_BEDROCK` | Direct Bedrock bearer token; alternative to SSO. | Executing Kiro |
+| `AWS_PROFILE` / `AWS_REGION` | AWS SSO profile + region used by Kiro. | Executing Kiro |
+| `CTF_HARNESS_KIRO_CONFIG_DIR` | Optional override for Kiro auth directory. Defaults to `~/.kiro`. | Executing Kiro |
+| `CTF_HARNESS_KIRO_MODEL` | Model override (defaults to `claude-sonnet-4.5-v2`). | Executing Kiro |
+| `OPENCODE_API_KEY` | Direct API key for OpenCode (sst/opencode). | Executing OpenCode |
+| `OPENCODE_AUTH_TOKEN` | OAuth token for OpenCode. | Executing OpenCode |
+| `CTF_HARNESS_OPENCODE_HOME` | Optional override for OpenCode auth directory. Defaults to `~/.local/share/opencode`. | Executing OpenCode |
+| `CTF_HARNESS_OPENCODE_MODEL` | Model override (defaults to `claude-sonnet-4-5`). | Executing OpenCode |
 | `CTF_HARNESS_CLAUDE_CONFIG_DIR` | Optional override for Claude Code auth directory. Defaults to `~/.claude`. | Executing Claude |
 | `CTF_HARNESS_CODEX_HOME` | Optional override for Codex auth directory. Defaults to `~/.codex`. | Executing Codex |
 | `CTF_HARNESS_AGENT_MCP_URL` | MCP HTTP URL handed to dashboard-launched agents. `start_full.bat` defaults it to `http://127.0.0.1:8000/mcp`. | CTFd mode backend bridge |
@@ -38,13 +47,24 @@ The application relies strictly on environment variables for API authentication 
 
 > **Note**: Do not commit the `.env` file to version control.
 
-Claude and Codex can also use their normal local CLI logins. If `~/.claude/.credentials.json`
-or `~/.codex/auth.json` exists, the harness copies only the relevant auth file into the
-per-challenge container home for the matching agent.
+All four supported agents (Claude, Codex, Kiro, OpenCode) can use their normal
+local CLI logins. When present, the harness copies the relevant auth files
+into the per-challenge container home for the matching agent:
+
+| Agent | Host auth file(s) copied into container `$HOME` |
+| :--- | :--- |
+| Claude | `~/.claude/.credentials.json` |
+| Codex | `~/.codex/auth.json` |
+| Kiro | `~/.kiro/secrets.json`, `~/.kiro/argv.json`, `~/.aws/sso/cache/*.json`, `~/.aws/config`, `~/.aws/credentials` |
+| OpenCode | `~/.local/share/opencode/{auth,account,mcp-auth}.json`, `~/.config/opencode/*` |
 
 If local auth is missing, users have two options:
-- Sign in with the local Claude/Codex CLI so the default auth files exist.
-- Set API credentials in `.env`: `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` for Claude, or `OPENAI_API_KEY` / `CODEX_ACCESS_TOKEN` for Codex.
+- Sign in with the local CLI so the default auth files exist:
+  `claude` (Claude Code), `codex login`, `kiro-cli login`, `opencode auth login`.
+- Set API credentials in `.env`: `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` for Claude,
+  `OPENAI_API_KEY` / `CODEX_ACCESS_TOKEN` for Codex, `KIRO_API_KEY` / `AWS_BEARER_TOKEN_BEDROCK` /
+  `AWS_PROFILE` for Kiro, or `OPENCODE_API_KEY` / `OPENCODE_AUTH_TOKEN` for OpenCode
+  (OpenCode also falls back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`).
 
 Missing auth is shown in:
 - `setup_mcp.bat` / `scripts/setup.py --auth-check`
@@ -70,6 +90,18 @@ Missing auth is shown in:
    ```bash
    docker build -t ctf-ai-solver:latest -f Dockerfile.ctf-tools .
    ```
+
+   The image bakes in four agent CLIs: `claude`, `codex`, `opencode`. Kiro's
+   Linux binary is not on npm and Amazon distributes it as a signed tarball;
+   pass its URL at build time to include it:
+   ```bash
+   docker build -t ctf-ai-solver:latest \
+     --build-arg KIRO_CLI_URL=https://<amazon-provided-url>/kiro-cli-linux-x86_64.tar.gz \
+     -f Dockerfile.ctf-tools .
+   ```
+   If `KIRO_CLI_URL` is omitted, the build skips the Kiro CLI install; Kiro
+   agents then fail at runtime with a clear "kiro-cli not found; rebuild the
+   tools image" message.
 
 4. **Environment Setup:**
    ```bash

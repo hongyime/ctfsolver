@@ -313,6 +313,36 @@ def _check_codex_auth() -> CheckResult:
     )
 
 
+def _check_kiro_auth() -> CheckResult:
+    kiro_dir = Path(os.environ.get("CTF_HARNESS_KIRO_CONFIG_DIR") or Path.home() / ".kiro")
+    # Kiro's primary auth is AWS SSO cache; secrets.json is a fallback signal.
+    for env_var in ("KIRO_API_KEY", "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE"):
+        if os.environ.get(env_var):
+            return CheckResult("Kiro auth", STATUS_PASS, "environment auth is present", (f"source: {env_var}",))
+    if (kiro_dir / "secrets.json").exists():
+        return CheckResult("Kiro auth", STATUS_PASS, "host Kiro secrets.json is present", (str(kiro_dir / "secrets.json"),))
+    aws_sso_cache = Path.home() / ".aws" / "sso" / "cache"
+    if aws_sso_cache.exists():
+        return CheckResult("Kiro auth", STATUS_PASS, "AWS SSO cache is present", (str(aws_sso_cache),))
+    return CheckResult(
+        "Kiro auth",
+        STATUS_WARN,
+        "missing; sign in with `kiro-cli` or set KIRO_API_KEY / AWS_BEARER_TOKEN_BEDROCK / AWS_PROFILE",
+        (f"checked: {kiro_dir}/secrets.json and {aws_sso_cache}",),
+    )
+
+
+def _check_opencode_auth() -> CheckResult:
+    opencode_dir = Path(os.environ.get("CTF_HARNESS_OPENCODE_HOME") or Path.home() / ".local" / "share" / "opencode")
+    return _auth_check(
+        "OpenCode",
+        ("OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN", "OPENCODE_OAUTH_TOKEN"),
+        opencode_dir / "auth.json",
+        "missing; sign in with `opencode auth login` or set OPENCODE_API_KEY / OPENCODE_AUTH_TOKEN "
+        "(or fall back to ANTHROPIC_API_KEY / OPENAI_API_KEY)",
+    )
+
+
 def _registry_images() -> list[str]:
     registry = importlib.import_module("ctf_core.registry")
     return sorted({entry.image for entry in getattr(registry, "TOOL_REGISTRY") if entry.image})
@@ -370,6 +400,8 @@ def run_doctor(
         _check_mcp_templates(root),
         _check_claude_auth(),
         _check_codex_auth(),
+        _check_kiro_auth(),
+        _check_opencode_auth(),
     ]
     if include_images:
         checks.append(_check_docker_images(docker_available=docker_available))

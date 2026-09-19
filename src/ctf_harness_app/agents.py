@@ -9,7 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from .config import DEFAULT_CODEX_MODEL, DEFAULT_CTF_IMAGE, DEFAULT_DOCKERFILE, load_dotenv
+from .config import DEFAULT_CODEX_MODEL, DEFAULT_CTF_IMAGE, DEFAULT_DOCKERFILE, DEFAULT_KIRO_MODEL, DEFAULT_OPENCODE_MODEL, load_dotenv
 from .workspace import build_followup_prompt, load_challenge, record_run_finish, record_run_heartbeat, record_run_start
 from .util import HarnessError
 
@@ -92,6 +92,110 @@ def codex_model() -> str:
     return model
 
 
+# ---------------------------------------------------------------------------
+# Kiro CLI (Amazon Kiro - AWS Bedrock backed) auth + config
+# ---------------------------------------------------------------------------
+
+
+def host_kiro_config_dir() -> Path:
+    home = os.environ.get("CTF_HARNESS_KIRO_CONFIG_DIR") or os.environ.get("KIRO_CONFIG_DIR")
+    return Path(home).expanduser() if home else Path.home() / ".kiro"
+
+
+def host_kiro_secrets_path() -> Path:
+    return host_kiro_config_dir() / "secrets.json"
+
+
+def host_aws_dir() -> Path:
+    return Path.home() / ".aws"
+
+
+def prepare_kiro_auth_env() -> None:
+    # Kiro uses AWS SSO tokens or Bedrock bearer tokens; no aliases to normalize.
+    return
+
+
+def has_kiro_auth() -> bool:
+    prepare_kiro_auth_env()
+    return bool(
+        os.environ.get("KIRO_API_KEY")
+        or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
+        or os.environ.get("AWS_PROFILE")
+        or host_kiro_secrets_path().exists()
+        or (host_aws_dir() / "sso" / "cache").exists()
+    )
+
+
+def kiro_env_summary() -> str:
+    if os.environ.get("KIRO_API_KEY"):
+        return "KIRO_API_KEY is set"
+    if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
+        return "AWS_BEARER_TOKEN_BEDROCK is set"
+    if os.environ.get("AWS_PROFILE"):
+        return f"AWS_PROFILE={os.environ['AWS_PROFILE']!r} is set"
+    if host_kiro_secrets_path().exists():
+        return "host Kiro secrets.json is available"
+    if (host_aws_dir() / "sso" / "cache").exists():
+        return "host AWS SSO cache is available"
+    return "no Kiro auth is configured"
+
+
+def kiro_model() -> str:
+    return os.environ.get("CTF_HARNESS_KIRO_MODEL", "").strip() or DEFAULT_KIRO_MODEL
+
+
+# ---------------------------------------------------------------------------
+# OpenCode CLI (sst/opencode) auth + config
+# ---------------------------------------------------------------------------
+
+
+def host_opencode_auth_path() -> Path:
+    home = os.environ.get("CTF_HARNESS_OPENCODE_HOME") or os.environ.get("OPENCODE_HOME")
+    if home:
+        return Path(home).expanduser() / "auth.json"
+    return Path.home() / ".local" / "share" / "opencode" / "auth.json"
+
+
+def host_opencode_share_dir() -> Path:
+    return host_opencode_auth_path().parent
+
+
+def host_opencode_config_dir() -> Path:
+    return Path.home() / ".config" / "opencode"
+
+
+def prepare_opencode_auth_env() -> None:
+    if not os.environ.get("OPENCODE_AUTH_TOKEN") and os.environ.get("OPENCODE_OAUTH_TOKEN"):
+        os.environ["OPENCODE_AUTH_TOKEN"] = os.environ["OPENCODE_OAUTH_TOKEN"]
+
+
+def has_opencode_auth() -> bool:
+    prepare_opencode_auth_env()
+    return bool(
+        os.environ.get("OPENCODE_API_KEY")
+        or os.environ.get("OPENCODE_AUTH_TOKEN")
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or host_opencode_auth_path().exists()
+    )
+
+
+def opencode_env_summary() -> str:
+    if os.environ.get("OPENCODE_API_KEY"):
+        return "OPENCODE_API_KEY is set"
+    if os.environ.get("OPENCODE_AUTH_TOKEN"):
+        return "OPENCODE_AUTH_TOKEN is set"
+    if host_opencode_auth_path().exists():
+        return "host OpenCode auth.json is available"
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+        return "provider API key (Anthropic/OpenAI) is set"
+    return "no OpenCode auth is configured"
+
+
+def opencode_model() -> str:
+    return os.environ.get("CTF_HARNESS_OPENCODE_MODEL", "").strip() or DEFAULT_OPENCODE_MODEL
+
+
 def agent_mcp_url() -> str:
     return os.environ.get("CTF_HARNESS_AGENT_MCP_URL", "").strip()
 
@@ -164,6 +268,8 @@ def build_tools_image(
 def docker_env_args(agent: str = "agent") -> list[str]:
     prepare_claude_auth_env()
     prepare_codex_auth_env()
+    prepare_kiro_auth_env()
+    prepare_opencode_auth_env()
     args: list[str] = []
     prefer_host_codex_auth = agent == "codex" and host_codex_auth_path().exists()
     for env_name in (
@@ -173,10 +279,32 @@ def docker_env_args(agent: str = "agent") -> list[str]:
         "CLAUDE_CODE_USE_VERTEX",
         "OPENAI_API_KEY",
         "CODEX_ACCESS_TOKEN",
+        "KIRO_API_KEY",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_PROFILE",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "OPENCODE_API_KEY",
+        "OPENCODE_AUTH_TOKEN",
     ):
-        if agent == "claude" and env_name in {"OPENAI_API_KEY", "CODEX_ACCESS_TOKEN"}:
+        # Scope leakage of provider-specific creds by agent so tokens don't cross-contaminate.
+        if agent == "claude" and env_name in {
+            "OPENAI_API_KEY", "CODEX_ACCESS_TOKEN",
+            "KIRO_API_KEY", "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION",
+            "OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN",
+        }:
             continue
-        if agent == "codex" and env_name.startswith(("ANTHROPIC_", "CLAUDE_CODE_")):
+        if agent == "codex" and (
+            env_name.startswith(("ANTHROPIC_", "CLAUDE_CODE_", "KIRO_", "OPENCODE_"))
+            or env_name in {"AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"}
+        ):
+            continue
+        if agent == "kiro" and env_name.startswith(("ANTHROPIC_", "CLAUDE_CODE_", "OPENAI_", "CODEX_", "OPENCODE_")):
+            continue
+        if agent == "opencode" and (
+            env_name.startswith(("CLAUDE_CODE_", "CODEX_", "KIRO_"))
+            or env_name in {"AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"}
+        ):
             continue
         if prefer_host_codex_auth and env_name == "CODEX_ACCESS_TOKEN":
             continue
@@ -197,6 +325,11 @@ def mask_command(command: list[str]) -> list[str]:
         "OPENAI_OAUTH_TOKEN",
         "CODEX_OAUTH_TOKEN",
         "CODEX_ACCESS_TOKEN",
+        "KIRO_API_KEY",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "OPENCODE_API_KEY",
+        "OPENCODE_AUTH_TOKEN",
+        "OPENCODE_OAUTH_TOKEN",
     )
     for part in command:
         if mask_next:
@@ -343,11 +476,88 @@ def codex_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FIL
     return ["sh", "-lc", shell_script]
 
 
+def kiro_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FILENAME}") -> list[str]:
+    # Kiro CLI (Amazon) is Bedrock-backed via AWS SSO / bearer tokens.
+    # We copy the host's ~/.kiro and ~/.aws into the container so the CLI can use
+    # cached SSO tokens or the configured AWS profile. Prompt goes through stdin
+    # so we don't struggle with shell quoting of multi-line CTF prompts.
+    model = kiro_model()
+    kiro_args = ["kiro-cli", "chat", "--no-interactive", "--trust-all-tools"]
+    if model:
+        kiro_args.extend(["--model", model])
+    base_command = " ".join(shlex.quote(part) for part in kiro_args)
+    resume_note = "(action=continue: fresh Kiro session; Kiro does not expose --resume in CLI mode)" if action == "continue" else ""
+    shell_script = (
+        "export HOME=/root; "
+        "export XDG_CACHE_HOME=/root/.cache; "
+        "export XDG_STATE_HOME=/root/.local/state; "
+        "mkdir -p /root/.kiro /root/.aws /root/.cache /root/.local/state; "
+        "echo '[ctf-harness] container user:'; id; "
+        "echo '[ctf-harness] Kiro auth env:'; "
+        "env | grep -E '^(KIRO_API_KEY|AWS_BEARER_TOKEN_BEDROCK|AWS_PROFILE|AWS_REGION|AWS_DEFAULT_REGION)=' | sed 's/=.*/=<set>/' || true; "
+        "if ! command -v kiro-cli >/dev/null 2>&1; then "
+        "echo '[ctf-harness] kiro-cli not found in ctf-ai-solver image; rebuild the tools image with the Kiro CLI install step, or install kiro-cli manually inside the container.'; "
+        "exit 127; "
+        "fi; "
+        "echo '[ctf-harness] kiro-cli:'; command -v kiro-cli; kiro-cli --version 2>&1 || true; "
+        f"echo '[ctf-harness] kiro model: {shlex.quote(model)}'; "
+        f"echo {shlex.quote('[ctf-harness] ' + resume_note) if resume_note else 'true'}; "
+        f"exec {base_command} < {shlex.quote(prompt_path)}"
+    )
+    return ["sh", "-lc", shell_script]
+
+
+def opencode_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_FILENAME}") -> list[str]:
+    # OpenCode (sst/opencode) supports non-interactive runs via `opencode run <prompt>`.
+    # Auth precedence in the container: mounted ~/.local/share/opencode/auth.json,
+    # then provider API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENCODE_API_KEY).
+    model = opencode_model()
+    opencode_args = ["opencode", "run"]
+    if model:
+        opencode_args.extend(["--model", model])
+    if action == "continue":
+        opencode_args.append("--continue")
+    base_command = " ".join(shlex.quote(part) for part in opencode_args)
+    shell_script = (
+        "export HOME=/root; "
+        "export XDG_CACHE_HOME=/root/.cache; "
+        "export XDG_STATE_HOME=/root/.local/state; "
+        "export XDG_DATA_HOME=/root/.local/share; "
+        "export XDG_CONFIG_HOME=/root/.config; "
+        "mkdir -p /root/.local/share/opencode /root/.config/opencode /root/.cache /root/.local/state; "
+        "echo '[ctf-harness] container user:'; id; "
+        "echo '[ctf-harness] OpenCode auth env:'; "
+        "env | grep -E '^(OPENCODE_API_KEY|OPENCODE_AUTH_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY)=' | sed 's/=.*/=<set>/' || true; "
+        "if ! command -v opencode >/dev/null 2>&1; then "
+        "echo '[ctf-harness] opencode CLI not found in ctf-ai-solver image; rebuild the tools image (opencode is installed via npm at build time).'; "
+        "echo '[ctf-harness] globally installed npm packages:'; "
+        "npm list -g --depth=0 2>/dev/null || true; "
+        "exit 127; "
+        "fi; "
+        "echo '[ctf-harness] opencode:'; command -v opencode; opencode --version 2>&1 || true; "
+        f"echo '[ctf-harness] opencode model: {shlex.quote(model)}'; "
+        "if [ -f /root/.local/share/opencode/auth.json ]; then "
+        "echo '[ctf-harness] host opencode auth.json mounted'; "
+        "fi; "
+        f"exec {base_command} \"$(cat {shlex.quote(prompt_path)})\" </dev/null"
+    )
+    return ["sh", "-lc", shell_script]
+
+
 def docker_command(challenge_dir: Path, inner_command: list[str], image: str = DEFAULT_CTF_IMAGE, agent: str = "agent") -> list[str]:
     challenge_dir = challenge_dir.resolve()
     home = challenge_dir / ".agent-home"
     home.mkdir(parents=True, exist_ok=True)
-    for directory in (home / ".claude", home / ".codex", home / ".cache", home / ".local" / "state"):
+    for directory in (
+        home / ".claude",
+        home / ".codex",
+        home / ".kiro",
+        home / ".aws",
+        home / ".local" / "share" / "opencode",
+        home / ".config" / "opencode",
+        home / ".cache",
+        home / ".local" / "state",
+    ):
         directory.mkdir(parents=True, exist_ok=True)
     if agent == "claude" and host_claude_credentials_path().exists():
         shutil.copy2(host_claude_credentials_path(), home / ".claude" / ".credentials.json")
@@ -355,6 +565,40 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
         shutil.copy2(host_codex_auth_path(), home / ".codex" / "auth.json")
     if agent == "codex":
         write_codex_mcp_config(home / ".codex")
+    if agent == "kiro":
+        # Kiro secrets.json + argv.json + SSO cache. Only files we know are safe to copy.
+        for name in ("secrets.json", "argv.json"):
+            source = host_kiro_config_dir() / name
+            if source.exists():
+                shutil.copy2(source, home / ".kiro" / name)
+        aws_sso_cache = host_aws_dir() / "sso" / "cache"
+        if aws_sso_cache.exists():
+            target_cache = home / ".aws" / "sso" / "cache"
+            target_cache.mkdir(parents=True, exist_ok=True)
+            for entry in aws_sso_cache.iterdir():
+                if entry.is_file():
+                    shutil.copy2(entry, target_cache / entry.name)
+        for aws_file in ("config", "credentials"):
+            source = host_aws_dir() / aws_file
+            if source.exists():
+                shutil.copy2(source, home / ".aws" / aws_file)
+    if agent == "opencode":
+        opencode_share_target = home / ".local" / "share" / "opencode"
+        for name in ("auth.json", "account.json", "mcp-auth.json"):
+            source = host_opencode_share_dir() / name
+            if source.exists():
+                shutil.copy2(source, opencode_share_target / name)
+        opencode_config_source = host_opencode_config_dir()
+        if opencode_config_source.exists():
+            opencode_config_target = home / ".config" / "opencode"
+            for entry in opencode_config_source.iterdir():
+                target = opencode_config_target / entry.name
+                if entry.is_file():
+                    shutil.copy2(entry, target)
+                elif entry.is_dir():
+                    if target.exists():
+                        shutil.rmtree(target)
+                    shutil.copytree(entry, target)
     name = f"ctf-{challenge_dir.name[:48]}-{agent}-{int(time.time())}"
     command = [
         "docker",
@@ -504,3 +748,42 @@ def run_codex(challenge_dir: Path, action: str, message: str = "") -> int:
     prompt = prompt_for_action(challenge_dir, action, message)
     command = docker_command(challenge_dir, codex_inner_command(action), agent="codex")
     return run_streaming_agent(challenge_dir, "codex", action, prompt, command, codex_env_summary(), "codex.log", "codex-last-message.txt")
+
+
+def run_kiro(challenge_dir: Path, action: str, message: str = "") -> int:
+    load_dotenv()
+    prepare_kiro_auth_env()
+    if not has_kiro_auth():
+        raise HarnessError(
+            "Kiro auth is not configured. Set KIRO_API_KEY, AWS_BEARER_TOKEN_BEDROCK, or AWS_PROFILE "
+            "in .env, or sign in with `kiro-cli` so ~/.kiro/secrets.json (and ~/.aws/sso/cache) exist, "
+            "then rerun."
+        )
+    prompt = prompt_for_action(challenge_dir, action, message)
+    command = docker_command(challenge_dir, kiro_inner_command(action), agent="kiro")
+    return run_streaming_agent(
+        challenge_dir, "kiro", action, prompt, command, kiro_env_summary(), "kiro.log", "kiro-last-message.txt"
+    )
+
+
+def run_opencode(challenge_dir: Path, action: str, message: str = "") -> int:
+    load_dotenv()
+    prepare_opencode_auth_env()
+    if not has_opencode_auth():
+        raise HarnessError(
+            "OpenCode auth is not configured. Set OPENCODE_API_KEY, OPENCODE_AUTH_TOKEN, "
+            "ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env, or sign in with `opencode auth login` "
+            "so ~/.local/share/opencode/auth.json exists, then rerun."
+        )
+    prompt = prompt_for_action(challenge_dir, action, message)
+    command = docker_command(challenge_dir, opencode_inner_command(action), agent="opencode")
+    return run_streaming_agent(
+        challenge_dir,
+        "opencode",
+        action,
+        prompt,
+        command,
+        opencode_env_summary(),
+        "opencode.log",
+        "opencode-last-message.txt",
+    )

@@ -64,7 +64,28 @@ RUN apt-get update \
     done \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+RUN npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
+
+# Kiro CLI (Amazon Kiro - AWS Bedrock backed). No public npm package exists;
+# Amazon distributes it as a signed tarball. Pass the URL at build time:
+#   docker build --build-arg KIRO_CLI_URL=https://.../kiro-cli-linux-x86_64.tar.gz ...
+# If unset, the build skips the install with a warning and Kiro agents will
+# fail at runtime with a "kiro-cli not found" message that points here.
+ARG KIRO_CLI_URL=""
+RUN if [ -n "$KIRO_CLI_URL" ]; then \
+      set -eux; \
+      curl -fsSL "$KIRO_CLI_URL" -o /tmp/kiro-cli.tar.gz; \
+      mkdir -p /opt/kiro-cli; \
+      tar -xzf /tmp/kiro-cli.tar.gz -C /opt/kiro-cli; \
+      kiro_bin="$(find /opt/kiro-cli -maxdepth 4 -type f -name kiro-cli | head -n1)"; \
+      if [ -z "$kiro_bin" ]; then echo "kiro-cli binary not found in tarball" >&2; exit 1; fi; \
+      ln -sf "$kiro_bin" /usr/local/bin/kiro-cli; \
+      chmod +x "$kiro_bin"; \
+      rm -f /tmp/kiro-cli.tar.gz; \
+      kiro-cli --version || true; \
+    else \
+      echo "[ctf-tools] KIRO_CLI_URL not set; kiro-cli NOT installed. Kiro agents will require a rebuild with --build-arg KIRO_CLI_URL=<url>."; \
+    fi
 RUN for gem in zsteg one_gadget seccomp-tools; do \
         gem install "$gem" --no-document || true; \
     done
