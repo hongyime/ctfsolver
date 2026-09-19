@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .util import HarnessError, slugify, unique_path
+from .util import HarnessError, sanitize_folder_name, slugify, unique_path
 
 
 @dataclasses.dataclass(frozen=True)
@@ -30,8 +30,22 @@ class Challenge:
 
     @property
     def slug(self) -> str:
+        """Legacy identifier retained for state.json / DB keys (id+category+slug form)."""
         category = slugify(self.category) if self.category else "misc"
         return f"{self.id:04d}-{category}-{slugify(self.name)}"
+
+    @property
+    def folder_name(self) -> str:
+        """Filesystem folder name for the challenge — matches organiser's given name.
+
+        Layout convention: <output_dir>/<challenge folder_name>/ (files, README, etc.).
+        For the flatter slug-based layout, opt in via
+        CTF_HARNESS_CHALLENGE_LAYOUT=slug (default is 'name').
+        """
+        layout = os.environ.get("CTF_HARNESS_CHALLENGE_LAYOUT", "name").strip().lower()
+        if layout == "slug":
+            return self.slug
+        return sanitize_folder_name(self.name, fallback=self.slug)
 
 
 class CTFdClient:

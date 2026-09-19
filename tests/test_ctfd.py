@@ -158,3 +158,63 @@ def test_ctfd_client_retry_logic_failure(mock_urlopen):
             client.api_get("/api/v1/test")
         assert "HTTP 500" in str(exc_info.value)
         assert mock_urlopen.call_count == 3
+
+
+
+
+# ---- Challenge folder-name (Bryan's <YEAR> <CTF NAME>/<challenge>/ layout) ----
+
+
+def test_challenge_folder_name_uses_raw_name_by_default(monkeypatch) -> None:
+    from ctf_harness_app.ctfd import Challenge
+    monkeypatch.delenv("CTF_HARNESS_CHALLENGE_LAYOUT", raising=False)
+    c = Challenge(
+        id=42, name="Go Going Goen", category="Misc", value=100,
+        description="", connection_info=None, files=[], tags=[], hints=[], raw={},
+    )
+    assert c.folder_name == "Go Going Goen"
+
+
+def test_challenge_folder_name_sanitizes_windows_invalid_chars(monkeypatch) -> None:
+    from ctf_harness_app.ctfd import Challenge
+    monkeypatch.delenv("CTF_HARNESS_CHALLENGE_LAYOUT", raising=False)
+    c = Challenge(
+        id=1, name='Path?Traversal: <hack> | attack', category="Web", value=100,
+        description="", connection_info=None, files=[], tags=[], hints=[], raw={},
+    )
+    # Colons, slashes, angle brackets, pipes, question marks all stripped.
+    fn = c.folder_name
+    for bad in '<>:"/\\|?*':
+        assert bad not in fn, f"{bad!r} should be stripped: {fn!r}"
+    assert "Path" in fn and "attack" in fn
+
+
+def test_challenge_folder_name_falls_back_to_slug_when_name_empty() -> None:
+    from ctf_harness_app.ctfd import Challenge
+    c = Challenge(
+        id=7, name="?????", category="crypto", value=0,
+        description="", connection_info=None, files=[], tags=[], hints=[], raw={},
+    )
+    # After stripping ? chars, name is empty — falls back to slug id-cat-slugify(name).
+    assert c.folder_name == c.slug
+
+
+def test_challenge_folder_name_layout_env_override(monkeypatch) -> None:
+    from ctf_harness_app.ctfd import Challenge
+    c = Challenge(
+        id=5, name="Whistle", category="Forensics", value=200,
+        description="", connection_info=None, files=[], tags=[], hints=[], raw={},
+    )
+    monkeypatch.setenv("CTF_HARNESS_CHALLENGE_LAYOUT", "slug")
+    assert c.folder_name == c.slug  # legacy layout
+    monkeypatch.setenv("CTF_HARNESS_CHALLENGE_LAYOUT", "name")
+    assert c.folder_name == "Whistle"
+
+
+def test_sanitize_folder_name_edge_cases() -> None:
+    from ctf_harness_app.util import sanitize_folder_name
+    assert sanitize_folder_name("Simple Name") == "Simple Name"
+    assert sanitize_folder_name("With/slash") == "Withslash"
+    assert sanitize_folder_name("trailing dots...") == "trailing dots"
+    assert sanitize_folder_name("   ") == "challenge"  # fallback
+    assert sanitize_folder_name("", fallback="fallback-id") == "fallback-id"

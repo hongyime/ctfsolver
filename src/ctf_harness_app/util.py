@@ -49,6 +49,24 @@ def slugify(value: str) -> str:
     return value or "challenge"
 
 
+def sanitize_folder_name(value: str, fallback: str = "challenge") -> str:
+    """Turn a raw challenge name into a filesystem-safe folder name.
+
+    Preserves spaces, letter case, and most punctuation so the layout matches
+    Bryan's manual `<YEAR> <CTF NAME>/<challenge>/` convention rather than
+    lowercase-hyphen slug form. Strips only characters that Windows / most
+    filesystems reject in path components.
+    """
+    invalid = r'[<>:"/\\|?*\x00-\x1f]'
+    value = re.sub(invalid, "", value).strip()
+    # Windows also treats trailing dots / spaces as invalid on the final segment.
+    value = value.rstrip(". ")
+    # Bound length so we don't blow the 255-byte per-segment limit.
+    if len(value.encode("utf-8", "replace")) > 200:
+        value = value.encode("utf-8", "replace")[:200].decode("utf-8", "replace")
+    return value or fallback
+
+
 def unique_path(path: Path) -> Path:
     if not path.exists():
         return path

@@ -96,7 +96,7 @@ def build_followup_prompt(challenge: Challenge, message: str) -> str:
 
 
 def write_challenge_workspace(client: CTFdClient, challenge: Challenge, output_dir: Path) -> Path:
-    challenge_dir = output_dir / challenge.slug
+    challenge_dir = output_dir / challenge.folder_name
     files_dir = challenge_dir / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
     downloaded_files: list[str] = []
