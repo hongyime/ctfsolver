@@ -1040,6 +1040,124 @@ def run_auto(challenge_dir: Path, action: str, message: str = "", preferred: str
     return agent, AGENT_DISPATCH[agent](challenge_dir, action, message)
 
 
+# ---------------------------------------------------------------------------
+# Container-side runtime fallback: if the chosen agent's container fails
+# because the CLI is missing, auth is bad, or the container crashed for
+# infrastructure reasons (not the challenge itself being hard), retry with
+# the next agent in AGENT_FALLBACK_ORDER.
+# ---------------------------------------------------------------------------
+
+# Substrings we look for in the run log to classify a failure as "infra"
+# (retriable with a different agent) vs "challenge" (agent tried but couldn't
+# solve — different agent unlikely to help, don't blindly retry).
+INFRA_FAILURE_SIGNALS = (
+    # CLI missing (Dockerfile didn't bake it in, or install failed)
+    "kiro-cli not found",
+    "codex CLI not found",
+    "opencode CLI not found",
+    "command not found",
+    "not found in ctf-ai-solver image",
+    "exec: \"claude\": executable file not found",
+    "exec: \"codex\": executable file not found",
+    "exec: \"opencode\": executable file not found",
+    "exec: \"kiro-cli\": executable file not found",
+    # Auth failures we know can be caused by env misconfig, not challenge difficulty
+    "InvalidClientTokenId",
+    "The security token included in the request is invalid",
+    "The security token included in the request is expired",
+    "codex auth status failed and no usable",
+    "Kiro auth is not configured",
+    "OpenCode auth is not configured",
+    "Claude auth is not configured",
+    "Codex auth is not configured",
+    "no Kiro auth is configured",
+    "no OpenCode auth is configured",
+    # SSO / Bedrock plugin failures
+    "Session token not found or invalid",
+    "UnauthorizedException",
+    # Container itself couldn't start
+    "docker: Error response from daemon",
+)
+
+
+def _log_indicates_infra_failure(challenge_dir: Path, agent: str) -> tuple[bool, str]:
+    """Read the tail of the just-finished run log and check for infra-failure
+    signals. Returns (is_infra_failure, matched_signal)."""
+    log_candidates = [
+        challenge_dir / f"{agent}.log",
+        challenge_dir / f"{agent}-last-message.txt",
+    ]
+    for log_path in log_candidates:
+        if not log_path.exists():
+            continue
+        try:
+            # Read the last 32KB — enough to see the failure surface
+            data = log_path.read_bytes()
+            tail = data[-32_768:].decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        for signal in INFRA_FAILURE_SIGNALS:
+            if signal in tail:
+                return True, signal
+    return False, ""
+
+
+def run_auto_with_fallback(
+    challenge_dir: Path,
+    action: str,
+    message: str = "",
+    preferred: str | None = None,
+    max_agents: int = 3,
+) -> tuple[str, int, list[tuple[str, int, str]]]:
+    """Run the best-available agent; if it fails due to an infrastructure
+    signal (CLI missing, auth broken, session expired), retry with the next
+    available agent in AGENT_FALLBACK_ORDER. Bounded by max_agents (default 3)
+    to avoid burning excessive container time on repeat runs.
+
+    Returns (final_agent, final_returncode, attempts) where attempts is a list
+    of (agent, returncode, reason) tuples describing what happened.
+
+    Does NOT retry on non-infra failures — if an agent runs the challenge and
+    exits with rc=1 because the challenge is hard, that's a signal the harness
+    should surface (agent tried), not a signal to burn another agent's time.
+    """
+    load_dotenv()
+    avail = agent_availability()
+    order_env = os.environ.get("CTF_HARNESS_AGENT_FALLBACK_ORDER", "").strip()
+    order = tuple(a.strip() for a in order_env.split(",") if a.strip()) if order_env else AGENT_FALLBACK_ORDER
+    if preferred and preferred in order:
+        # Move preferred to front so it goes first
+        order = (preferred,) + tuple(a for a in order if a != preferred)
+    elif preferred and avail.get(preferred):
+        order = (preferred,) + order
+
+    attempts: list[tuple[str, int, str]] = []
+    for agent in order:
+        if len(attempts) >= max_agents:
+            break
+        if not avail.get(agent):
+            attempts.append((agent, -1, "unavailable (no auth)"))
+            continue
+        try:
+            rc = AGENT_DISPATCH[agent](challenge_dir, action, message)
+        except HarnessError as e:
+            attempts.append((agent, -1, f"HarnessError: {e}"))
+            continue
+        if rc == 0:
+            attempts.append((agent, rc, "success"))
+            return agent, rc, attempts
+        # Non-zero — classify
+        is_infra, signal = _log_indicates_infra_failure(challenge_dir, agent)
+        if is_infra:
+            attempts.append((agent, rc, f"infra: {signal!r}"))
+            continue
+        # Non-infra failure — the agent tried, don't retry with another
+        attempts.append((agent, rc, "agent tried but did not solve; not retrying"))
+        return agent, rc, attempts
+
+    return (attempts[-1][0] if attempts else ""), (attempts[-1][1] if attempts else -1), attempts
+
+
 def run_batch(
     challenge_dirs: list[Path],
     action: str = "start",

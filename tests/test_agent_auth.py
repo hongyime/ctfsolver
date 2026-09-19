@@ -465,3 +465,117 @@ def test_run_streaming_agent_nonzero_exit_propagates(tmp_path) -> None:
     )
     assert rc == 7
     assert "bye" in (challenge_dir / "test.log").read_text(encoding="utf-8")
+
+
+
+
+# ---- run_auto_with_fallback (retry on infra failure) ----
+
+
+def test_log_indicates_infra_failure_detects_signals(tmp_path):
+    (tmp_path / "kiro.log").write_text(
+        "some stuff\n[ctf-harness] kiro-cli not found in ctf-ai-solver image\ndone",
+        encoding="utf-8",
+    )
+    is_infra, signal = agents._log_indicates_infra_failure(tmp_path, "kiro")
+    assert is_infra is True
+    assert "kiro-cli not found" in signal
+
+
+def test_log_indicates_infra_failure_ignores_challenge_errors(tmp_path):
+    (tmp_path / "claude.log").write_text(
+        "I tried to reverse-engineer the binary but couldn't find the flag.\n"
+        "Multiple approaches failed. Giving up for now.\n",
+        encoding="utf-8",
+    )
+    is_infra, signal = agents._log_indicates_infra_failure(tmp_path, "claude")
+    assert is_infra is False
+
+
+def test_log_indicates_infra_failure_no_log(tmp_path):
+    is_infra, signal = agents._log_indicates_infra_failure(tmp_path, "opencode")
+    assert is_infra is False
+    assert signal == ""
+
+
+def test_run_auto_with_fallback_skips_unavailable(tmp_path, monkeypatch):
+    """When kiro is unavailable, fallback should try opencode next without
+    invoking kiro at all."""
+    calls: list[str] = []
+
+    def fake_kiro(*a, **kw):
+        calls.append("kiro"); return 0
+    def fake_opencode(*a, **kw):
+        calls.append("opencode"); return 0
+
+    monkeypatch.setattr(agents, "agent_availability", lambda: {
+        "claude": False, "codex": False, "kiro": False, "opencode": True,
+    })
+    monkeypatch.setitem(agents.AGENT_DISPATCH, "kiro", fake_kiro)
+    monkeypatch.setitem(agents.AGENT_DISPATCH, "opencode", fake_opencode)
+
+    final_agent, rc, attempts = agents.run_auto_with_fallback(tmp_path, "start")
+    assert final_agent == "opencode"
+    assert rc == 0
+    assert "kiro" not in calls
+    assert "opencode" in calls
+    # Kiro was skipped due to unavailable, opencode succeeded
+    assert any(a for a, _, _ in attempts if a == "kiro" and "unavailable" in _.split(":")[0].lower() or "unavailable" in _)
+
+
+def test_run_auto_with_fallback_retries_on_infra_signal(tmp_path, monkeypatch):
+    """If kiro fails with an infra signal in its log, we retry with the next."""
+    challenge_dir = tmp_path / "chal"
+    challenge_dir.mkdir()
+
+    def fake_kiro(cd, *a, **kw):
+        # Simulate kiro failing with CLI-missing signal
+        (cd / "kiro.log").write_text("[ctf-harness] kiro-cli not found\n", encoding="utf-8")
+        return 127
+    def fake_opencode(cd, *a, **kw):
+        return 0
+
+    monkeypatch.setattr(agents, "agent_availability", lambda: {
+        "claude": False, "codex": False, "kiro": True, "opencode": True,
+    })
+    monkeypatch.setitem(agents.AGENT_DISPATCH, "kiro", fake_kiro)
+    monkeypatch.setitem(agents.AGENT_DISPATCH, "opencode", fake_opencode)
+
+    final_agent, rc, attempts = agents.run_auto_with_fallback(challenge_dir, "start")
+    assert final_agent == "opencode"
+    assert rc == 0
+    labels = [a for a, _, _ in attempts]
+    assert labels[0] == "kiro"
+    assert labels[1] == "opencode"
+    assert "infra" in attempts[0][2]
+
+
+def test_run_auto_with_fallback_does_not_retry_on_agent_failure(tmp_path, monkeypatch):
+    """If the agent runs and just can't solve, don't burn other agents' time."""
+    challenge_dir = tmp_path / "chal"
+    challenge_dir.mkdir()
+
+    def fake_claude(cd, *a, **kw):
+        # Real content of the CTF attempt; no infra signal
+        (cd / "claude.log").write_text(
+            "I tried several exploits but could not find the flag.\n",
+            encoding="utf-8",
+        )
+        return 1
+    other_called = []
+    def fake_codex(cd, *a, **kw):
+        other_called.append("codex"); return 0
+
+    monkeypatch.setattr(agents, "agent_availability", lambda: {
+        "claude": True, "codex": True, "kiro": False, "opencode": False,
+    })
+    monkeypatch.setitem(agents.AGENT_DISPATCH, "claude", fake_claude)
+    monkeypatch.setitem(agents.AGENT_DISPATCH, "codex", fake_codex)
+
+    final_agent, rc, attempts = agents.run_auto_with_fallback(
+        challenge_dir, "start", preferred="claude",
+    )
+    assert final_agent == "claude"
+    assert rc == 1
+    # Codex should NOT have been called
+    assert other_called == []
