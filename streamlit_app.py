@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import html
 import sys
+import time
 import concurrent.futures
 from pathlib import Path
 
@@ -44,7 +45,7 @@ LOG_TAIL_HEIGHT = 520
 ACTIVITY_HEIGHT = 620
 ACTIVITY_RENDER_LIMIT = 40
 DEFAULT_RAW_LOG_LIMIT = 4_000
-DETAIL_VIEWS = ["Runs", "Claude activity", "Claude last", "Claude raw", "Codex activity", "Codex last", "Codex raw"]
+DETAIL_VIEWS = ["Runs", "State", "Journal", "Claude activity", "Claude last", "Claude raw", "Codex activity", "Codex last", "Codex raw"]
 RAW_LOG_LIMIT_OPTIONS = {
     "4 KB": 4_000,
     "12 KB": 12_000,
@@ -564,6 +565,35 @@ def render_challenge_body(challenge: dict[str, Any]) -> None:
                 )
             else:
                 st.caption("No runs yet.")
+        elif view == "State":
+            # STATE.md is the agent's living plan/status. Render as markdown so
+            # the user sees it the same way the next agent will read it.
+            challenge_dir = resolve_challenge_dir(output_dir(), challenge["slug"])
+            state_path = challenge_dir / "STATE.md"
+            if state_path.exists():
+                try:
+                    st.markdown(state_path.read_text(encoding="utf-8", errors="replace"))
+                    mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(state_path.stat().st_mtime))
+                    st.caption(f"STATE.md · updated {mtime} · {state_path}")
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not read STATE.md: {exc}")
+            else:
+                st.caption("No STATE.md yet — will appear once the challenge workspace is scaffolded or an agent starts writing it.")
+        elif view == "Journal":
+            challenge_dir = resolve_challenge_dir(output_dir(), challenge["slug"])
+            journal_path = challenge_dir / "JOURNAL.md"
+            if journal_path.exists():
+                try:
+                    data = journal_path.read_text(encoding="utf-8", errors="replace")
+                    # Show newest-first for at-a-glance; JOURNAL.md is append-only
+                    # bottom-up on disk, but user wants to see latest first here.
+                    render_log_panel(data, height=LOG_TAIL_HEIGHT, wrap=True)
+                    mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(journal_path.stat().st_mtime))
+                    st.caption(f"JOURNAL.md · updated {mtime} · {journal_path}")
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not read JOURNAL.md: {exc}")
+            else:
+                st.caption("No JOURNAL.md yet.")
         elif view == "Claude last":
             render_log_panel(
                 challenge.get("claude_last_message") or "No Claude output yet.",
