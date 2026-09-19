@@ -396,3 +396,72 @@ def test_docker_command_layers_pool_keys_over_env(tmp_path, monkeypatch) -> None
     assert len(aws_positions) >= 1
     last = cmd[aws_positions[-1]]
     assert last == "AWS_ACCESS_KEY_ID=AKIA_POOL", f"pool key must be last, got: {last}"
+
+
+
+
+# ---- run_streaming_agent threading-based reader (Windows-safe) ----
+
+
+def test_run_streaming_agent_captures_stdout_via_thread(tmp_path, monkeypatch) -> None:
+    """The threading-based reader should capture all stdout regardless of platform."""
+    import sys as _sys, textwrap as _tw
+    from ctf_harness_app.ctfd import Challenge
+    from ctf_harness_app.workspace import ensure_state
+    import json as _json
+
+    challenge_dir = tmp_path / "chal"
+    challenge_dir.mkdir()
+    challenge = Challenge(
+        id=1, name="stream-test", category="test", value=1, description="",
+        connection_info=None, files=[], tags=[], hints=[], raw={},
+    )
+    (challenge_dir / "metadata.json").write_text(_json.dumps({
+        "id": 1, "name": "stream-test", "category": "test", "description": "",
+        "value": 1, "tags": [], "hints": [], "files": [], "connection_info": None,
+        "slug": challenge.slug, "downloaded_files": [],
+    }), encoding="utf-8")
+    ensure_state(challenge_dir, challenge, [])
+
+    # Command that emits several lines then exits — no docker, just python.
+    inner = [_sys.executable, "-u", "-c",
+             "import sys, time\nfor i in range(3):\n    print(f'chunk-{i}', flush=True)\n    time.sleep(0.05)"]
+    rc = agents.run_streaming_agent(
+        challenge_dir=challenge_dir, agent="test", action="start",
+        prompt="fixture prompt", command=inner,
+        env_summary="fixture env", log_filename="test.log", last_filename="test-last.txt",
+    )
+    assert rc == 0
+    log_text = (challenge_dir / "test.log").read_text(encoding="utf-8", errors="replace")
+    for i in range(3):
+        assert f"chunk-{i}" in log_text, f"missing chunk-{i} in log; got: {log_text!r}"
+    last_text = (challenge_dir / "test-last.txt").read_text(encoding="utf-8", errors="replace")
+    assert "chunk-2" in last_text
+
+
+def test_run_streaming_agent_nonzero_exit_propagates(tmp_path) -> None:
+    from ctf_harness_app.ctfd import Challenge
+    from ctf_harness_app.workspace import ensure_state
+    import sys as _sys, json as _json
+
+    challenge_dir = tmp_path / "chal"
+    challenge_dir.mkdir()
+    challenge = Challenge(
+        id=2, name="exit-test", category="test", value=1, description="",
+        connection_info=None, files=[], tags=[], hints=[], raw={},
+    )
+    (challenge_dir / "metadata.json").write_text(_json.dumps({
+        "id": 2, "name": "exit-test", "category": "test", "description": "",
+        "value": 1, "tags": [], "hints": [], "files": [], "connection_info": None,
+        "slug": challenge.slug, "downloaded_files": [],
+    }), encoding="utf-8")
+    ensure_state(challenge_dir, challenge, [])
+
+    inner = [_sys.executable, "-c", "import sys; sys.stdout.write('bye\\n'); sys.exit(7)"]
+    rc = agents.run_streaming_agent(
+        challenge_dir=challenge_dir, agent="test", action="start",
+        prompt="p", command=inner, env_summary="e",
+        log_filename="test.log", last_filename="test-last.txt",
+    )
+    assert rc == 7
+    assert "bye" in (challenge_dir / "test.log").read_text(encoding="utf-8")

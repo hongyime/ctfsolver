@@ -159,3 +159,94 @@ def test_launcher_batches_wire_doctor() -> None:
     assert "scripts\\doctor.py" in backend
     assert "scripts\\setup.py --write --auth-check" in setup_mcp
     assert "scripts\\doctor.py" in setup_mcp
+
+
+
+
+# ---- IAM key pool doctor check ----
+
+
+def test_iam_key_pool_missing_file_is_warn(tmp_path, monkeypatch) -> None:
+    from ctf_core.doctor import _check_iam_key_pool, STATUS_WARN
+    monkeypatch.setenv("CTF_HARNESS_IAM_KEY_POOL", str(tmp_path / "no-pool.json"))
+    r = _check_iam_key_pool()
+    assert r.status == STATUS_WARN
+    assert "no pool file" in r.message
+
+
+def test_iam_key_pool_reports_verified_count(tmp_path, monkeypatch) -> None:
+    import json
+    from ctf_core.doctor import _check_iam_key_pool, STATUS_PASS
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps({
+        "region": "ap-southeast-1",
+        "keys": [
+            {"label": "k1", "access_key_id": "AKIA1", "secret_access_key": "s1", "account": "111", "bedrock_ok": True},
+            {"label": "k2", "access_key_id": "AKIA2", "secret_access_key": "s2", "account": "222", "bedrock_ok": True},
+            {"label": "k3", "access_key_id": "AKIA3", "secret_access_key": "s3", "account": "111", "bedrock_ok": False},
+        ],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_IAM_KEY_POOL", str(pool))
+    r = _check_iam_key_pool()
+    assert r.status == STATUS_PASS
+    assert "3 IAM keys" in r.message
+    assert "2 Bedrock-verified" in r.message
+    assert "ap-southeast-1" in r.message
+    joined = " ".join(r.details)
+    assert "verified: 2" in joined
+    assert "failed: 1" in joined
+
+
+def test_iam_key_pool_invalid_json_is_fail(tmp_path, monkeypatch) -> None:
+    from ctf_core.doctor import _check_iam_key_pool, STATUS_FAIL
+    pool = tmp_path / "pool.json"
+    pool.write_text("not-json{", encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_IAM_KEY_POOL", str(pool))
+    r = _check_iam_key_pool()
+    assert r.status == STATUS_FAIL
+
+
+# ---- Agent fallback doctor check ----
+
+
+def test_agent_fallback_none_authed_is_warn(tmp_path, monkeypatch) -> None:
+    from ctf_core.doctor import _check_agent_fallback, STATUS_WARN
+    for var in ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN", "KIRO_API_KEY",
+                "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE",
+                "OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    for var in ("CTF_HARNESS_CLAUDE_CONFIG_DIR", "CTF_HARNESS_CODEX_HOME",
+                "CTF_HARNESS_KIRO_CONFIG_DIR", "CTF_HARNESS_KIRO_DATA_DIR",
+                "CTF_HARNESS_OPENCODE_HOME"):
+        monkeypatch.setenv(var, str(tmp_path / f"no-{var}"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    r = _check_agent_fallback()
+    assert r.status == STATUS_WARN
+    assert "no agents" in r.message.lower()
+
+
+def test_agent_fallback_reports_authed_agents(tmp_path, monkeypatch) -> None:
+    from ctf_core.doctor import _check_agent_fallback, STATUS_PASS
+    for var in ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN", "KIRO_API_KEY",
+                "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE",
+                "OPENCODE_API_KEY", "OPENCODE_AUTH_TOKEN",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    # Only claude authed
+    claude = tmp_path / ".claude"; claude.mkdir()
+    (claude / ".credentials.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("CTF_HARNESS_CLAUDE_CONFIG_DIR", str(claude))
+    for var in ("CTF_HARNESS_CODEX_HOME", "CTF_HARNESS_KIRO_CONFIG_DIR",
+                "CTF_HARNESS_KIRO_DATA_DIR", "CTF_HARNESS_OPENCODE_HOME"):
+        monkeypatch.setenv(var, str(tmp_path / f"no-{var}"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    r = _check_agent_fallback()
+    assert r.status == STATUS_PASS
+    joined = " ".join(r.details)
+    assert "claude" in joined
+    assert "default pick: claude" in joined

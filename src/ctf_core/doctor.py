@@ -372,6 +372,90 @@ def _check_opencode_auth() -> CheckResult:
     )
 
 
+def _check_iam_key_pool() -> CheckResult:
+    """Report Bedrock IAM key pool size + verified count. WARN when pool is empty
+    (harness works without it, but concurrent Bedrock runs risk rate limits).
+    """
+    import json as _json
+    pool_env = os.environ.get("CTF_HARNESS_IAM_KEY_POOL")
+    pool_path = Path(pool_env).expanduser() if pool_env else Path.home() / ".opencode" / "bedrock-iam-key-pool.json"
+    if not pool_path.exists():
+        return CheckResult(
+            "IAM key pool",
+            STATUS_WARN,
+            "no pool file (Bedrock agents work without it, but rotation disabled)",
+            (f"expected at {pool_path}",),
+        )
+    try:
+        data = _json.loads(pool_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult("IAM key pool", STATUS_FAIL, f"pool file is invalid JSON: {exc}", (str(pool_path),))
+    keys = data.get("keys") or []
+    verified = sum(1 for k in keys if k.get("bedrock_ok") is True)
+    unverified = sum(1 for k in keys if k.get("bedrock_ok") is None)
+    failed = sum(1 for k in keys if k.get("bedrock_ok") is False)
+    region = data.get("region") or "?"
+    accounts = sorted({k.get("account", "?") for k in keys})
+    details = [
+        f"path: {pool_path}",
+        f"region: {region}",
+        f"accounts: {', '.join(accounts)}",
+        f"verified: {verified}",
+        f"unverified: {unverified}",
+        f"failed: {failed}",
+    ]
+    if not keys:
+        return CheckResult("IAM key pool", STATUS_WARN, "pool file exists but has 0 keys", tuple(details))
+    if failed and failed == len(keys):
+        return CheckResult("IAM key pool", STATUS_FAIL, "all pool keys are marked failed", tuple(details))
+    msg = f"{len(keys)} IAM keys ({verified} Bedrock-verified) in region {region}"
+    status = STATUS_PASS if verified else STATUS_WARN
+    return CheckResult("IAM key pool", status, msg, tuple(details))
+
+
+def _check_agent_fallback() -> CheckResult:
+    """Report which agents are authed + the effective fallback order.
+
+    Never fails hard — always PASS/WARN. WARN when zero agents are authed
+    (the harness can't run anything). PASS otherwise.
+    """
+    try:
+        from ctf_harness_app import agents as _agents  # local import to avoid cycle at doctor-import
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult("Agent fallback", STATUS_WARN, f"could not import agents module: {exc}")
+    try:
+        avail = _agents.agent_availability()
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult("Agent fallback", STATUS_WARN, f"agent_availability raised: {exc}")
+    authed = [a for a, ok in avail.items() if ok]
+    order_env = os.environ.get("CTF_HARNESS_AGENT_FALLBACK_ORDER", "").strip()
+    order = tuple(a.strip() for a in order_env.split(",") if a.strip()) if order_env else _agents.AGENT_FALLBACK_ORDER
+    details = [
+        f"authed: {authed or 'none'}",
+        f"fallback order: {' > '.join(order)}",
+    ]
+    if not authed:
+        return CheckResult(
+            "Agent fallback",
+            STATUS_WARN,
+            "no agents have usable auth (harness can't dispatch)",
+            tuple(details),
+        )
+    # Which agent would resolve_available_agent() pick with no preference?
+    try:
+        chosen = _agents.resolve_available_agent(preferred=None)
+    except Exception:
+        chosen = None
+    if chosen:
+        details.append(f"default pick: {chosen}")
+    return CheckResult(
+        "Agent fallback",
+        STATUS_PASS,
+        f"{len(authed)}/{len(avail)} agents authed",
+        tuple(details),
+    )
+
+
 def _registry_images() -> list[str]:
     registry = importlib.import_module("ctf_core.registry")
     return sorted({entry.image for entry in getattr(registry, "TOOL_REGISTRY") if entry.image})
@@ -431,6 +515,8 @@ def run_doctor(
         _check_codex_auth(),
         _check_kiro_auth(),
         _check_opencode_auth(),
+        _check_iam_key_pool(),
+        _check_agent_fallback(),
     ]
     if include_images:
         checks.append(_check_docker_images(docker_available=docker_available))

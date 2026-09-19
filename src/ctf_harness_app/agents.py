@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import selectors
+import selectors  # noqa: F401 - kept for backwards-compat; run_streaming_agent uses threading now
 import shlex
 import shutil
 import subprocess
@@ -753,6 +753,18 @@ def run_streaming_agent(
     log_filename: str,
     last_filename: str,
 ) -> int:
+    """Run the containerised agent, streaming its stdout to log + last-message files.
+
+    Portable across Windows and POSIX. Uses a background thread reading
+    subprocess.stdout in blocking mode into a queue; the main loop drains the
+    queue with a short timeout so we can still interleave heartbeat / no-output
+    notices without blocking indefinitely. (The earlier selector-based
+    implementation used selectors.DefaultSelector which on Windows only accepts
+    socket handles — subprocess pipes raised WinError 10038.)
+    """
+    import queue as _queue
+    import threading as _threading
+
     challenge = load_challenge(challenge_dir)
     log_path = challenge_dir / log_filename
     last_path = challenge_dir / last_filename
@@ -764,24 +776,44 @@ def run_streaming_agent(
     printable = " ".join(subprocess.list2cmdline([part]) for part in masked_command)
     output = bytearray()
     returncode = 1
+
+    def _reader(pipe, q: "_queue.Queue[bytes | None]") -> None:
+        """Blocking read loop on the child's stdout, pushing chunks to a queue.
+        Pushes None as EOF sentinel so the drain loop knows the child closed stdout."""
+        try:
+            while True:
+                chunk = pipe.read1(8192) if hasattr(pipe, "read1") else pipe.read(8192)
+                if not chunk:
+                    break
+                q.put(chunk)
+        finally:
+            q.put(None)
+
     with log_path.open("ab") as log:
         log.write(f"\n\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
         log.write(f"[ctf-harness] {env_summary}\n".encode())
         log.write(f"$ {printable}\n\n".encode())
         log.flush()
+
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        assert process.stdout is not None
+        chunk_queue: "_queue.Queue[bytes | None]" = _queue.Queue()
+        reader_thread = _threading.Thread(
+            target=_reader, args=(process.stdout, chunk_queue), daemon=True
+        )
+        reader_thread.start()
+
         next_heartbeat = time.monotonic() + 5
         next_no_output_notice = time.monotonic() + NO_OUTPUT_NOTICE_SECONDS
         last_output_at = time.monotonic()
-        assert process.stdout is not None
-        selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ)
+        eof_seen = False
         while True:
-            if time.monotonic() >= next_heartbeat:
+            now = time.monotonic()
+            if now >= next_heartbeat:
                 record_run_heartbeat(challenge_dir, run_id)
-                next_heartbeat = time.monotonic() + 5
-            if time.monotonic() >= next_no_output_notice:
-                quiet_for = int(time.monotonic() - last_output_at)
+                next_heartbeat = now + 5
+            if now >= next_no_output_notice:
+                quiet_for = int(now - last_output_at)
                 notice = f"\n[ctf-harness] {agent} still running; no output for {quiet_for}s.\n".encode()
                 log.write(notice)
                 log.flush()
@@ -789,29 +821,41 @@ def run_streaming_agent(
                 if len(output) > OUTPUT_BUFFER_LIMIT:
                     del output[: len(output) - OUTPUT_BUFFER_LIMIT]
                 last_path.write_bytes(output[-20000:])
-                next_no_output_notice = time.monotonic() + NO_OUTPUT_NOTICE_SECONDS
-            for key, _ in selector.select(timeout=0.5):
-                chunk = key.fileobj.read1(8192)
-                if chunk:
-                    last_output_at = time.monotonic()
-                    next_no_output_notice = last_output_at + NO_OUTPUT_NOTICE_SECONDS
-                    output.extend(chunk)
-                    if len(output) > OUTPUT_BUFFER_LIMIT:
-                        del output[: len(output) - OUTPUT_BUFFER_LIMIT]
-                    log.write(chunk)
-                    log.flush()
-                    last_path.write_bytes(output[-20000:])
-            returncode = process.poll()
-            if returncode is not None:
-                break
-        selector.close()
-        remainder = process.stdout.read()
-        if remainder:
-            output.extend(remainder)
+                next_no_output_notice = now + NO_OUTPUT_NOTICE_SECONDS
+
+            try:
+                chunk = chunk_queue.get(timeout=0.5)
+            except Exception:
+                chunk = None
+                # Timeout — no chunk this iteration. Fall through to poll below.
+                if not eof_seen and process.poll() is not None:
+                    # Process exited but reader thread may still have queued data;
+                    # drain briefly before breaking.
+                    reader_thread.join(timeout=1.0)
+                    continue
+                if eof_seen and process.poll() is not None:
+                    break
+                continue
+
+            if chunk is None:
+                # EOF sentinel from reader thread
+                eof_seen = True
+                if process.poll() is not None:
+                    break
+                continue
+
+            last_output_at = time.monotonic()
+            next_no_output_notice = last_output_at + NO_OUTPUT_NOTICE_SECONDS
+            output.extend(chunk)
             if len(output) > OUTPUT_BUFFER_LIMIT:
                 del output[: len(output) - OUTPUT_BUFFER_LIMIT]
-            log.write(remainder)
+            log.write(chunk)
             log.flush()
+            last_path.write_bytes(output[-20000:])
+
+        returncode = process.wait()
+        reader_thread.join(timeout=2.0)
+
         reported_error, error_message = stream_reported_error(bytes(output))
         if returncode == 0 and reported_error:
             returncode = 1
