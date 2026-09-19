@@ -7,8 +7,8 @@ DEFAULT_OUTPUT_DIR = "challenges"
 DEFAULT_CTF_IMAGE = "ctf-ai-solver:latest"
 DEFAULT_DOCKERFILE = "Dockerfile.ctf-tools"
 DEFAULT_CODEX_MODEL = "gpt-5.4"
-DEFAULT_KIRO_MODEL = "claude-sonnet-4.5-v2"
-DEFAULT_OPENCODE_MODEL = "claude-sonnet-4-5"
+DEFAULT_KIRO_MODEL = ""  # empty = let kiro-cli pick its default (avoids "Method not found" on bad names)
+DEFAULT_OPENCODE_MODEL = ""  # let opencode.jsonc drive the model
 STATE_FILENAME = "state.json"
 HARNESS_STATE_FILENAME = ".harness-state.json"
 

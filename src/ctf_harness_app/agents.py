@@ -106,6 +106,29 @@ def host_kiro_secrets_path() -> Path:
     return host_kiro_config_dir() / "secrets.json"
 
 
+def host_kiro_data_dir() -> Path:
+    """Directory holding Kiro CLI's real auth store (data.sqlite3).
+
+    Windows: %LOCALAPPDATA%\\Kiro-Cli\\  (e.g. C:\\Users\\<u>\\AppData\\Local\\Kiro-Cli)
+    Linux/macOS: ~/.local/share/kiro-cli/
+
+    Override with CTF_HARNESS_KIRO_DATA_DIR. This directory contains
+    data.sqlite3 (auth_kv table holds the actual OIDC access token and SSO
+    client registration; without this file Kiro CLI cannot make API calls).
+    """
+    override = os.environ.get("CTF_HARNESS_KIRO_DATA_DIR")
+    if override:
+        return Path(override).expanduser()
+    if os.name == "nt":
+        local_appdata = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+        return Path(local_appdata) / "Kiro-Cli"
+    return Path.home() / ".local" / "share" / "kiro-cli"
+
+
+def host_kiro_data_sqlite_path() -> Path:
+    return host_kiro_data_dir() / "data.sqlite3"
+
+
 def host_aws_dir() -> Path:
     return Path.home() / ".aws"
 
@@ -121,6 +144,7 @@ def has_kiro_auth() -> bool:
         os.environ.get("KIRO_API_KEY")
         or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
         or os.environ.get("AWS_PROFILE")
+        or host_kiro_data_sqlite_path().exists()
         or host_kiro_secrets_path().exists()
         or (host_aws_dir() / "sso" / "cache").exists()
     )
@@ -133,8 +157,10 @@ def kiro_env_summary() -> str:
         return "AWS_BEARER_TOKEN_BEDROCK is set"
     if os.environ.get("AWS_PROFILE"):
         return f"AWS_PROFILE={os.environ['AWS_PROFILE']!r} is set"
+    if host_kiro_data_sqlite_path().exists():
+        return f"host Kiro data.sqlite3 is available ({host_kiro_data_sqlite_path()})"
     if host_kiro_secrets_path().exists():
-        return "host Kiro secrets.json is available"
+        return "host Kiro secrets.json is available (MCP-only; likely NOT enough for chat)"
     if (host_aws_dir() / "sso" / "cache").exists():
         return "host AWS SSO cache is available"
     return "no Kiro auth is configured"
@@ -555,6 +581,7 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
         home / ".codex",
         home / ".kiro",
         home / ".aws",
+        home / ".local" / "share" / "kiro-cli",
         home / ".local" / "share" / "opencode",
         home / ".config" / "opencode",
         home / ".cache",
@@ -568,11 +595,41 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
     if agent == "codex":
         write_codex_mcp_config(home / ".codex")
     if agent == "kiro":
-        # Kiro secrets.json + argv.json + SSO cache. Only files we know are safe to copy.
-        for name in ("secrets.json", "argv.json"):
+        # The REAL Kiro CLI auth store is data.sqlite3 (auth_kv table). Files in
+        # ~/.kiro/ (secrets.json, argv.json) hold only MCP client creds and are
+        # NOT sufficient for chat — mounting data.sqlite3 is what makes container
+        # kiro-cli inherit the host's logged-in identity.
+        kiro_share_target = home / ".local" / "share" / "kiro-cli"
+        kiro_share_target.mkdir(parents=True, exist_ok=True)
+        host_kiro_sqlite = host_kiro_data_sqlite_path()
+        if host_kiro_sqlite.exists():
+            shutil.copy2(host_kiro_sqlite, kiro_share_target / "data.sqlite3")
+        # Copy top-level ~/.kiro files.
+        for name in ("secrets.json", "argv.json", ".trust-migration.json"):
             source = host_kiro_config_dir() / name
             if source.exists():
                 shutil.copy2(source, home / ".kiro" / name)
+        # Copy ~/.kiro subdirs that hold agent definitions and settings.
+        # Skip logs/sessions/session-index (ephemeral, large) and skills/steering/powers
+        # (they're often OneDrive-symlinked reparse points on Bryan's setup, cause
+        # WinError 3 during copytree, and aren't needed for container-side chat).
+        kiro_subdirs_to_copy = ("agents", "settings", "extensions", "tasks")
+        for subdir in kiro_subdirs_to_copy:
+            source_dir = host_kiro_config_dir() / subdir
+            if not source_dir.exists() or not source_dir.is_dir():
+                continue
+            target_dir = home / ".kiro" / subdir
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+            try:
+                shutil.copytree(source_dir, target_dir, ignore_dangling_symlinks=True)
+            except shutil.Error:
+                # Best-effort: partial copy is fine; container-side kiro-cli will
+                # fall back to its baked-in defaults for any missing pieces.
+                pass
+        # AWS SSO cache (for the plugin fallback path); Kiro's own token lives
+        # in data.sqlite3 above, but if the plugin also asks AWS SDK for creds
+        # it needs these.
         aws_sso_cache = host_aws_dir() / "sso" / "cache"
         if aws_sso_cache.exists():
             target_cache = home / ".aws" / "sso" / "cache"

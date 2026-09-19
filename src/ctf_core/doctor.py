@@ -315,20 +315,49 @@ def _check_codex_auth() -> CheckResult:
 
 def _check_kiro_auth() -> CheckResult:
     kiro_dir = Path(os.environ.get("CTF_HARNESS_KIRO_CONFIG_DIR") or Path.home() / ".kiro")
-    # Kiro's primary auth is AWS SSO cache; secrets.json is a fallback signal.
+    # Kiro's real auth is in data.sqlite3 under LOCALAPPDATA (Windows) or
+    # ~/.local/share/kiro-cli (Linux/macOS). ~/.kiro/secrets.json holds only MCP
+    # client creds, not the chat auth.
+    override = os.environ.get("CTF_HARNESS_KIRO_DATA_DIR")
+    if override:
+        kiro_data_dir = Path(override).expanduser()
+    elif os.name == "nt":
+        local_appdata = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+        kiro_data_dir = Path(local_appdata) / "Kiro-Cli"
+    else:
+        kiro_data_dir = Path.home() / ".local" / "share" / "kiro-cli"
+    kiro_sqlite = kiro_data_dir / "data.sqlite3"
+
     for env_var in ("KIRO_API_KEY", "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE"):
         if os.environ.get(env_var):
             return CheckResult("Kiro auth", STATUS_PASS, "environment auth is present", (f"source: {env_var}",))
+    if kiro_sqlite.exists():
+        return CheckResult(
+            "Kiro auth",
+            STATUS_PASS,
+            f"host Kiro data.sqlite3 is present ({kiro_sqlite.stat().st_size // 1024} KB)",
+            (str(kiro_sqlite),),
+        )
     if (kiro_dir / "secrets.json").exists():
-        return CheckResult("Kiro auth", STATUS_PASS, "host Kiro secrets.json is present", (str(kiro_dir / "secrets.json"),))
+        return CheckResult(
+            "Kiro auth",
+            STATUS_WARN,
+            "only ~/.kiro/secrets.json present (MCP creds); chat auth needs data.sqlite3",
+            (str(kiro_dir / "secrets.json"), f"expected: {kiro_sqlite}"),
+        )
     aws_sso_cache = Path.home() / ".aws" / "sso" / "cache"
     if aws_sso_cache.exists():
-        return CheckResult("Kiro auth", STATUS_PASS, "AWS SSO cache is present", (str(aws_sso_cache),))
+        return CheckResult(
+            "Kiro auth",
+            STATUS_WARN,
+            "no Kiro data.sqlite3; only ~/.aws/sso/cache (may not match Kiro's identity)",
+            (str(aws_sso_cache),),
+        )
     return CheckResult(
         "Kiro auth",
         STATUS_WARN,
-        "missing; sign in with `kiro-cli` or set KIRO_API_KEY / AWS_BEARER_TOKEN_BEDROCK / AWS_PROFILE",
-        (f"checked: {kiro_dir}/secrets.json and {aws_sso_cache}",),
+        "missing; run `kiro-cli login --license pro --identity-provider <sso-url> --region <sso-region>`",
+        (f"checked: {kiro_sqlite}",),
     )
 
 

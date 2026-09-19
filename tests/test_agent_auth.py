@@ -119,12 +119,54 @@ def test_kiro_default_secrets_count_as_auth(tmp_path, monkeypatch) -> None:
     for var in ("KIRO_API_KEY", "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("CTF_HARNESS_KIRO_CONFIG_DIR", str(kiro_home))
-    monkeypatch.setenv("HOME", str(tmp_path))  # keeps host_aws_dir from leaking real ~/.aws
+    # Force data.sqlite3 lookup at a non-existent tmp path so the older
+    # secrets.json-only path is exercised (data.sqlite3 takes precedence when present).
+    monkeypatch.setenv("CTF_HARNESS_KIRO_DATA_DIR", str(tmp_path / "no-such-kiro-data"))
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     assert agents.host_kiro_secrets_path() == kiro_home / "secrets.json"
     assert agents.has_kiro_auth() is True
-    assert agents.kiro_env_summary() == "host Kiro secrets.json is available"
+    summary = agents.kiro_env_summary()
+    assert "secrets.json" in summary and "MCP-only" in summary
+
+
+def test_kiro_data_sqlite_takes_precedence(tmp_path, monkeypatch) -> None:
+    """When data.sqlite3 exists, it is the primary auth signal (not secrets.json)."""
+    kiro_data = tmp_path / "kiro-data"
+    kiro_data.mkdir()
+    (kiro_data / "data.sqlite3").write_bytes(b"SQLite format 3\x00")
+
+    for var in ("KIRO_API_KEY", "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("CTF_HARNESS_KIRO_DATA_DIR", str(kiro_data))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    assert agents.host_kiro_data_sqlite_path() == kiro_data / "data.sqlite3"
+    assert agents.has_kiro_auth() is True
+    summary = agents.kiro_env_summary()
+    assert "data.sqlite3" in summary
+
+
+def test_docker_command_copies_kiro_data_sqlite(tmp_path, monkeypatch) -> None:
+    """docker_command must copy data.sqlite3 into container home (this is the real auth store)."""
+    kiro_data = tmp_path / "host-kiro-data"
+    kiro_data.mkdir()
+    (kiro_data / "data.sqlite3").write_bytes(b"SQLite format 3\x00-fake-token-store")
+
+    challenge_dir = tmp_path / "challenge"
+    challenge_dir.mkdir()
+
+    monkeypatch.setenv("CTF_HARNESS_KIRO_DATA_DIR", str(kiro_data))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    agents.docker_command(challenge_dir, ["true"], agent="kiro")
+
+    copied = challenge_dir / ".agent-home" / ".local" / "share" / "kiro-cli" / "data.sqlite3"
+    assert copied.exists(), f"data.sqlite3 not copied to {copied}"
+    assert copied.read_bytes() == b"SQLite format 3\x00-fake-token-store"
 
 
 def test_opencode_default_auth_json_count_as_auth(tmp_path, monkeypatch) -> None:
