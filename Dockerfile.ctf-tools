@@ -75,6 +75,17 @@ RUN apt-get update \
 
 RUN npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
 
+# AWS CLI v2 (official installer — awscli in Ubuntu apt is v1) + boto3.
+# Lets container-side commands hit AWS APIs directly using the credentials
+# the harness copies into /root/.aws/.
+RUN set -eux; \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip; \
+    unzip -q /tmp/awscliv2.zip -d /tmp; \
+    /tmp/aws/install --update; \
+    rm -rf /tmp/aws /tmp/awscliv2.zip; \
+    aws --version
+RUN pip3 install --break-system-packages --no-cache-dir boto3 botocore
+
 # Kiro CLI (Amazon Kiro - AWS Bedrock backed) via the canonical installer.
 # The installer downloads a signed zip from prod.download.cli.kiro.dev, verifies
 # its SHA256 against a manifest, and writes kiro-cli into $HOME/.local/bin.

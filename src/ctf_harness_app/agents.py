@@ -612,6 +612,36 @@ def opencode_inner_command(action: str, prompt_path: str = f"/workspace/{PROMPT_
     return ["sh", "-lc", shell_script]
 
 
+def _copy_aws_toolkit(home: Path) -> None:
+    """Mirror the host's AWS setup (credentials + config + SSO cache) into the
+    container's home so `aws --profile ...`, boto3, and Bedrock CLIs all work
+    the same way inside the container as they do on the host.
+
+    Called for EVERY agent (not just kiro/opencode) because a CTF challenge
+    may need AWS access regardless of which agent is driving.
+
+    Does NOT copy the IAM key pool file — the pool contains all 23 secrets
+    but only one key should ever land in a container (see iam_pool_env_args).
+    Also does NOT force-copy if the target already exists (agent-specific
+    branches earlier in docker_command may have populated it).
+    """
+    aws_target = home / ".aws"
+    aws_target.mkdir(parents=True, exist_ok=True)
+    for aws_file in ("config", "credentials"):
+        source = host_aws_dir() / aws_file
+        target = aws_target / aws_file
+        if source.exists() and not target.exists():
+            shutil.copy2(source, target)
+    aws_sso_cache = host_aws_dir() / "sso" / "cache"
+    if aws_sso_cache.exists():
+        target_cache = aws_target / "sso" / "cache"
+        target_cache.mkdir(parents=True, exist_ok=True)
+        for entry in aws_sso_cache.iterdir():
+            target_file = target_cache / entry.name
+            if entry.is_file() and not target_file.exists():
+                shutil.copy2(entry, target_file)
+
+
 def docker_command(challenge_dir: Path, inner_command: list[str], image: str = DEFAULT_CTF_IMAGE, agent: str = "agent") -> list[str]:
     challenge_dir = challenge_dir.resolve()
     home = challenge_dir / ".agent-home"
@@ -698,6 +728,11 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
                     if target.exists():
                         shutil.rmtree(target)
                     shutil.copytree(entry, target)
+    # Always mirror the host's AWS toolkit (creds + config + SSO cache) into
+    # every per-challenge container home. Runs LAST so agent-specific branches
+    # above (kiro's targeted AWS copy) get first shot; this is the fallback for
+    # any files those branches didn't touch.
+    _copy_aws_toolkit(home)
     name = f"ctf-{challenge_dir.name[:48]}-{agent}-{int(time.time())}"
     command = [
         "docker",
@@ -877,7 +912,7 @@ def prompt_for_action(challenge_dir: Path, action: str, message: str) -> str:
     challenge = load_challenge(challenge_dir)
     prompt = (challenge_dir / "PROMPT.md").read_text(encoding="utf-8")
     if action == "continue":
-        prompt = build_followup_prompt(challenge, message)
+        prompt = build_followup_prompt(challenge, message, challenge_dir=challenge_dir)
     return prompt
 
 

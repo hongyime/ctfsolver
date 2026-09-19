@@ -27,12 +27,63 @@ Runtime/tooling context:
   nmap/netcat/socat/curl/wget, sqlmap/gobuster/hydra/nikto/wfuzz when available,
   binwalk/foremost/exiftool, john/hashcat, tshark/tcpdump, node/npm, ruby gems
   such as zsteg/one_gadget/seccomp-tools.
+- AWS credentials from the host are mounted at /root/.aws (credentials + config
+  + sso/cache). awscli and boto3 are installed. Use them if the challenge
+  needs AWS API access; profiles include synapxe-<name>-<accountId> for
+  cross-account access via OrganizationAccountAccessRole.
 - If a useful package is missing, install it inside the container with
   sudo apt-get update && sudo apt-get install -y <package>. Keep installs scoped
   to tools needed for this challenge.
 """
 
+
+STATE_MAINTENANCE_CONTEXT = """\
+Persistent state (READ + WRITE at each step so any agent can resume):
+- /workspace/STATE.md — your CURRENT understanding: plan, hypotheses,
+  what you've ruled out, what worked, blockers, next intended action.
+  Overwrite this file each time your plan changes. Keep it terse.
+- /workspace/JOURNAL.md — append-only log of every meaningful step:
+  timestamp, action taken, tool + arguments used, brief result. New entries
+  go at the BOTTOM. Never rewrite past entries.
+- /workspace/EVIDENCE/ — put artifacts, dumps, screenshots, notes here.
+- /workspace/FLAG.txt — write the final flag here (and only the flag) once
+  you find it. Also state it in your final message.
+
+If STATE.md or JOURNAL.md already exist when you start, treat them as
+authoritative context left by a previous agent (possibly a different model).
+Read them fully, then continue from where they leave off — don't restart.
+"""
+
 ACTIVITY_LOG_LIMIT = 200_000
+
+
+def _read_state_files(challenge_dir: Path, journal_tail_bytes: int = 40_000) -> str:
+    """Return the current STATE.md + tail of JOURNAL.md as a formatted block.
+
+    Called by build_followup_prompt so a resuming agent (including a
+    different agent than the original) gets full context. Returns an empty
+    string when neither file exists — build_prompt then serves as the
+    initial-turn entry point.
+    """
+    parts: list[str] = []
+    state_path = challenge_dir / "STATE.md"
+    journal_path = challenge_dir / "JOURNAL.md"
+    if state_path.exists():
+        try:
+            parts.append("Existing STATE.md (previous agent's plan / status):")
+            parts.append(state_path.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            pass
+    if journal_path.exists():
+        try:
+            data = journal_path.read_bytes()
+            if len(data) > journal_tail_bytes:
+                data = b"...[earlier entries truncated]...\n" + data[-journal_tail_bytes:]
+            parts.append("Existing JOURNAL.md (append-only step log; new entries below):")
+            parts.append(data.decode("utf-8", errors="replace"))
+        except Exception:
+            pass
+    return "\n\n".join(parts).strip()
 
 
 def build_prompt(challenge: Challenge, downloaded_files: list[str]) -> str:
@@ -49,6 +100,8 @@ def build_prompt(challenge: Challenge, downloaded_files: list[str]) -> str:
         techniques to recover the flag. Do not attack unrelated systems.
 
         {TOOLING_CONTEXT}
+
+        {STATE_MAINTENANCE_CONTEXT}
 
         Challenge metadata:
         - id: {challenge.id}
@@ -68,21 +121,28 @@ def build_prompt(challenge: Challenge, downloaded_files: list[str]) -> str:
         {hints}
 
         Expected final answer:
-        - the flag
+        - the flag written to /workspace/FLAG.txt AND stated in your final message
+        - STATE.md updated to reflect the solved state
         - a concise explanation of the path used to get it
         """
     )
 
 
-def build_followup_prompt(challenge: Challenge, message: str) -> str:
+def build_followup_prompt(challenge: Challenge, message: str, challenge_dir: Path | None = None) -> str:
+    prior_state = _read_state_files(challenge_dir) if challenge_dir else ""
+    prior_block = f"\n{prior_state}\n" if prior_state else ""
     return textwrap.dedent(
         f"""\
         /goal Continue solving the CTF challenge "{challenge.name}" and recover the flag.
 
         Continue from the existing workspace, logs, and previous agent session.
+        A previous agent (possibly a different model) may have left context in
+        STATE.md and JOURNAL.md — read them fully before making new decisions.
 
         {TOOLING_CONTEXT}
 
+        {STATE_MAINTENANCE_CONTEXT}
+        {prior_block}
         Challenge context:
         - id: {challenge.id}
         - name: {challenge.name}
@@ -90,7 +150,7 @@ def build_followup_prompt(challenge: Challenge, message: str) -> str:
         - connection_info: {challenge.connection_info or "none"}
 
         Follow-up instructions:
-        {message.strip() or "Continue from the previous attempt. Re-check the workspace, logs, and files, then keep working toward the flag."}
+        {message.strip() or "Continue from the previous attempt. Re-check STATE.md and JOURNAL.md, re-check the workspace + logs + files, then keep working toward the flag."}
         """
     )
 
@@ -108,8 +168,50 @@ def write_challenge_workspace(client: CTFdClient, challenge: Challenge, output_d
     metadata["downloaded_files"] = downloaded_files
     write_json(challenge_dir / "metadata.json", metadata)
     (challenge_dir / "PROMPT.md").write_text(build_prompt(challenge, downloaded_files), encoding="utf-8")
+    _ensure_state_scaffold(challenge_dir, challenge)
     ensure_state(challenge_dir, challenge, downloaded_files)
     return challenge_dir
+
+
+def _ensure_state_scaffold(challenge_dir: Path, challenge: Challenge) -> None:
+    """Create STATE.md / JOURNAL.md / EVIDENCE/ / FLAG.txt placeholders."""
+    (challenge_dir / "EVIDENCE").mkdir(exist_ok=True)
+    state_path = challenge_dir / "STATE.md"
+    if not state_path.exists():
+        state_path.write_text(textwrap.dedent(f"""\
+            # STATE — {challenge.name}
+
+            _Rewrite this file as your plan evolves. Keep it terse._
+
+            ## Status
+            not started
+
+            ## Plan
+            - (agent: fill in your intended approach)
+
+            ## Hypotheses
+            - (agent: what you think the challenge is testing)
+
+            ## Ruled out
+            - (agent: what you've tried that didn't pan out)
+
+            ## Blockers
+            - (agent: anything stopping progress)
+
+            ## Next action
+            - (agent: single concrete next step)
+            """), encoding="utf-8")
+    journal_path = challenge_dir / "JOURNAL.md"
+    if not journal_path.exists():
+        journal_path.write_text(textwrap.dedent(f"""\
+            # JOURNAL — {challenge.name}
+
+            _Append-only. Each entry: `## YYYY-MM-DDTHH:MM:SSZ — <agent> — <action>` then body._
+            _Never rewrite past entries; a resuming agent uses this as ground truth._
+            """), encoding="utf-8")
+    flag_path = challenge_dir / "FLAG.txt"
+    if not flag_path.exists():
+        flag_path.write_text("", encoding="utf-8")
 
 
 def download_challenges(client: CTFdClient, output_dir: Path, skip_solved: bool = False) -> list[Path]:
