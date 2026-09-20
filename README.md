@@ -199,6 +199,34 @@ start_full.bat --workdir "D:\CTFs\active"
 Starts the dashboard (and the MCP HTTP backend for agents) with the given working directory.
 Omit `--workdir` only if `CTF_WORKDIR` is already set in your `.env` or shell.
 
+### Running Multiple CTFs in Parallel
+
+Each `start_full.bat` invocation is a fully independent process with its own workdir, DB, and
+MCP backend. To run two CTFs simultaneously, use different `--workdir` **and** `--port` values
+so the MCP HTTP backends don't fight over the same port:
+
+```bat
+rem Terminal 1 — TISC
+start_full.bat --workdir "C:\Users\bryan\OneDrive\01 CTF\2026 TISC CTF" --port 8000
+
+rem Terminal 2 — CyberLeague (different port!)
+start_full.bat --workdir "C:\Users\bryan\OneDrive\01 CTF\2026 CYBER LEAGUE MAJOR CTF" --port 8001
+```
+
+Streamlit auto-increments its own port (8501, 8502…) so the browser UIs don't collide.
+Each session's MCP backend, DB, challenge folders, and agent containers are fully isolated.
+
+| What | Session 1 | Session 2 |
+| :--- | :--- | :--- |
+| Working dir | `...\2026 TISC CTF` | `...\2026 CYBER LEAGUE MAJOR CTF` |
+| DB | `...\2026 TISC CTF\ctf_state.db` | `...\2026 CYBER LEAGUE MAJOR CTF\ctf_state.db` |
+| MCP HTTP port | 8000 | 8001 |
+| Dashboard URL | http://localhost:8501 | http://localhost:8502 |
+| Docker containers | scoped to TISC challenges | scoped to CyberLeague challenges |
+
+> **Port convention**: use 8000, 8001, 8002… for as many parallel sessions as you need.
+> You can also pre-set `CTF_HARNESS_AGENT_MCP_URL` in the environment to skip the auto-start
+> of the embedded backend entirely, or set `CTF_HARNESS_START_AGENT_MCP=0` to disable it.
 ### Non-CTFd Challenges
 Use non-CTFd mode when a challenge is not on CTFd. In this mode, your AI IDE/CLI is the MCP client and calls the backend tools directly.
 
