@@ -493,6 +493,70 @@ def _check_docker_images(*, docker_available: bool) -> CheckResult:
     return CheckResult("Docker images", STATUS_PASS, f"all {len(present)} registry image(s) are present")
 
 
+def _check_workdir(workspace_override: Path | None = None) -> CheckResult:
+    """Verify CTF_WORKDIR (or fallback CTFTOOLKIT_WORKSPACE) is configured and usable.
+
+    *workspace_override* is used when run_doctor() is called with an explicit
+    workspace path (e.g. via CLI --workspace or test fixtures); in that case
+    env-var lookup is skipped so the caller's resolved path is the single source.
+    """
+    if workspace_override is not None:
+        path = workspace_override.resolve()
+        source = "workspace_override"
+    else:
+        ctf_workdir = os.environ.get("CTF_WORKDIR", "").strip()
+        legacy = os.environ.get("CTFTOOLKIT_WORKSPACE", "").strip()
+        raw = ctf_workdir or legacy
+        source = "CTF_WORKDIR" if ctf_workdir else "CTFTOOLKIT_WORKSPACE"
+
+        if not raw:
+            return CheckResult(
+                "Working directory",
+                STATUS_FAIL,
+                "CTF_WORKDIR is not set \u2014 pass --workdir or set CTF_WORKDIR",
+            )
+
+        path = Path(raw)
+        if not path.is_absolute():
+            return CheckResult(
+                "Working directory",
+                STATUS_FAIL,
+                f"CTF_WORKDIR must be an absolute path; got: {raw}",
+                (f"source: {source}",),
+            )
+        path = path.resolve()
+
+    # Must be outside repo root
+    try:
+        path.relative_to(PROJECT_ROOT)
+        return CheckResult(
+            "Working directory",
+            STATUS_FAIL,
+            f"CTF_WORKDIR must be outside the repo root; got: {path}",
+            (f"repo root: {PROJECT_ROOT}", f"source: {source}"),
+        )
+    except ValueError:
+        pass  # not under repo root \u2014 good
+
+    if not path.exists():
+        return CheckResult(
+            "Working directory",
+            STATUS_WARN,
+            f"path does not exist yet (will be created at runtime): {path}",
+            (f"source: {source}",),
+        )
+
+    if not os.access(path, os.W_OK):
+        return CheckResult(
+            "Working directory",
+            STATUS_FAIL,
+            f"CTF_WORKDIR exists but is not writable: {path}",
+            (f"source: {source}",),
+        )
+
+    return CheckResult("Working directory", STATUS_PASS, str(path), (f"source: {source}",))
+
+
 def run_doctor(
     *,
     project_root: Path | None = None,
@@ -510,6 +574,7 @@ def run_doctor(
         _check_registry_count(),
         _check_project_paths(root),
         _check_workspace_permissions(root, workspace),
+        _check_workdir(workspace),
         _check_mcp_templates(root),
         _check_claude_auth(),
         _check_codex_auth(),

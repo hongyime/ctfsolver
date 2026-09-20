@@ -102,8 +102,16 @@ _rate_limiter = AdaptiveRateLimiter(base_delay=1.0, max_delay=10.0, min_delay=0.
 
 
 def _downloads_dir() -> Path:
-    base = Path(os.environ.get("CTFTOOLKIT_DOWNLOADS", "downloads"))
-    return base / "writeups"
+    dl = os.environ.get("CTFTOOLKIT_DOWNLOADS")
+    if dl:
+        return Path(dl) / "writeups"
+    ws = os.environ.get("CTFTOOLKIT_WORKSPACE")
+    if not ws:
+        raise EnvironmentError(
+            "CTF_WORKDIR / CTFTOOLKIT_WORKSPACE is not set. "
+            "Pass --workdir to the launcher or set CTF_WORKDIR."
+        )
+    return Path(ws) / "downloads" / "writeups"
 
 
 def _atomic_write(path: Path, content: str) -> None:

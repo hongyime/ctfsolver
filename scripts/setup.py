@@ -45,6 +45,27 @@ def build_config(*, windows: bool) -> dict:
     root = _fmt_path(PROJECT_ROOT, windows=windows)
     workspace = _fmt_path(PROJECT_ROOT / "workspace", windows=windows)
     db_path = _fmt_path(PROJECT_ROOT / "ctf_state.db", windows=windows)
+
+    # Resolve CTF_WORKDIR: env var first, then session config fallback
+    ctf_workdir = os.environ.get("CTF_WORKDIR", "").strip()
+    if not ctf_workdir:
+        try:
+            import importlib.util as _ilu
+            _script = PROJECT_ROOT / "scripts" / "ctfsolver_config.py"
+            _spec = _ilu.spec_from_file_location("ctfsolver_config", str(_script))
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+                ctf_workdir = _mod.read_session_config().get("workdir", "") or ""
+        except Exception:
+            pass
+    if not ctf_workdir:
+        print(
+            "WARNING: CTF_WORKDIR is not set. Set it in .env or via the dashboard '--workdir' flag ",
+            "before running agents.",
+            file=sys.stderr,
+        )
+
     return {
         "mcpServers": {
             SERVER_ID: {
@@ -54,6 +75,7 @@ def build_config(*, windows: bool) -> dict:
                     "run", "python", "-m", "ctf_core.server",
                 ],
                 "env": {
+                    "CTF_WORKDIR": ctf_workdir,
                     "CTFTOOLKIT_WORKSPACE": workspace,
                     "CTFTOOLKIT_DB_PATH": db_path,
                 },

@@ -3,11 +3,15 @@
 ![Dashboard](./image.png)
 
 ## 1. Project Overview
-This repository contains a local Streamlit dashboard and testing harness designed to bridge the gap between Capture The Flag (CTF) platforms and autonomous Large Language Model agents. It automates the extraction of challenges from CTFd, mounts them into isolated, tool-rich Docker containers, and manages the lifecycle of AI agents (Claude Code or Codex) attempting to solve them. Telemetry, active state tracking, and parsed execution logs are rendered in the frontend dashboard.
+This repository contains a local Streamlit dashboard and testing harness designed to bridge the gap between Capture The Flag (CTF) platforms and autonomous Large Language Model agents. It automates the extraction of challenges from multiple CTF platforms, mounts them into isolated, tool-rich Docker containers, and manages the lifecycle of AI agents (Claude Code, Codex, Kiro, or OpenCode) attempting to solve them. Telemetry, active state tracking, and parsed execution logs are rendered in the frontend dashboard.
 
-`ctfsolver` has two modes:
+`ctfsolver` has three user-facing modes:
 - **CTFd mode**: browser dashboard for CTFd challenge import and agent runs.
-- **Non-CTFd mode**: MCP backend server for direct tool use by Claude/Codex-compatible MCP clients.
+- **rCTF mode**: browser dashboard for rCTF platform (used by many open-source CTFs).
+- **Manual mode**: no platform API; paste in your own challenge metadata.
+- **Non-CTFd mode**: stdio MCP backend server for direct tool use by Claude/Codex-compatible MCP clients.
+
+**Orchestrator vs workspace:** The repo itself (`C:\ctfsolver` or wherever it is cloned) is the *orchestrator home* only — source code, Dockerfiles, and agent tooling. All runtime output (challenge folders, agent working files, DB, logs, downloads) lives in a **user-supplied working directory** that can be anywhere on the host or on an SMB/network share.
 
 Internal package/env names such as `ctf_core` and `CTFTOOLKIT_*` are retained for compatibility.
 
@@ -115,10 +119,27 @@ Missing auth is shown in:
 4. **Environment Setup:**
    ```bash
    cp .env.example .env
-   # Open .env and add your respective tokens.
+   # Open .env and fill in API keys.
    ```
 
-5. **Generate your MCP config:**
+5. **Set your working directory:**
+   All challenge files, agent workspaces, DB, and logs live *outside* the repo.
+   Set `CTF_WORKDIR` to an absolute path on your machine or SMB share:
+   ```bat
+   rem Option A — set in .env (persists across sessions)
+   rem CTF_WORKDIR=D:\CTFs\active
+
+   rem Option B — pass on the command line
+   start_full.bat --workdir "D:\CTFs\active"
+   start_backend.bat --workdir "D:\CTFs\active"
+   ```
+   The dashboard sidebar also lets you type/change the path at runtime; it is saved
+   to `~/.ctfsolver/config.json` and pre-filled on next launch.
+
+   > **Never set `CTF_WORKDIR` to the repo directory itself.** The repo is the
+   > orchestrator home (source code, Dockerfiles, tools). Keep runtime data separate.
+
+6. **Generate your MCP config:**
    On Windows:
    ```bat
    setup_mcp.bat
@@ -127,8 +148,26 @@ Missing auth is shown in:
    ```bash
    uv run python scripts/setup.py --write --auth-check
    ```
-   This writes `mcp.local.json` for your checkout and prints whether Claude/Codex local auth is available. `mcp.local.json` is ignored by git because it contains machine-specific paths.
+   This writes `mcp.local.json` for your checkout (includes `CTF_WORKDIR`) and prints
+   whether Claude/Codex local auth is available. `mcp.local.json` is ignored by git.
 
+The dashboard sidebar shows a **Platform** selector before the URL/credential fields:
+
+| Platform | Auth needed | Notes |
+| :--- | :--- | :--- |
+| **CTFd** | URL + API token | Standard CTFd instances (`/api/v1/challenges`) |
+| **rCTF** | URL + team token | rCTF open-source platform (team token from the scoreboard) |
+| **Manual** | None | Paste challenge metadata directly; no platform API needed |
+
+Switching platform clears the credential fields but keeps your working directory.
+The last-used platform, URL, and username are saved to `~/.ctfsolver/config.json`
+and pre-filled on next launch.
+
+> **Password/token fields are never written to `~/.ctfsolver/config.json` or `.env`.**
+> Supply them at runtime via the sidebar.
+
+
+### Platform Selection
 ## 5. Usage & Testing
 
 ### Windows Launchers
@@ -155,16 +194,17 @@ start_backend.bat --http --port 8000 --path /mcp
 Starts optional streamable HTTP MCP mode for local multi-client workflows. This is opt-in; stdio remains the default. The HTTP launcher only binds to loopback hosts such as `127.0.0.1` or `localhost`.
 
 ```bat
-start_full.bat
+start_full.bat --workdir "D:\CTFs\active"
 ```
-Starts the CTFd dashboard with backend paths/env wired to this repo. By default it also starts a host-owned loopback MCP HTTP backend at `http://127.0.0.1:8000/mcp`, sets `CTF_HARNESS_AGENT_MCP_URL`, and gives dashboard-launched Claude/Codex agents a `ctfsolver` MCP server without mounting the host Docker socket into the agent container.
+Starts the dashboard (and the MCP HTTP backend for agents) with the given working directory.
+Omit `--workdir` only if `CTF_WORKDIR` is already set in your `.env` or shell.
 
 ### Non-CTFd Challenges
 Use non-CTFd mode when a challenge is not on CTFd. In this mode, your AI IDE/CLI is the MCP client and calls the backend tools directly.
 
 Important: MCP uses stdio. Usually you do **not** start `start_backend.bat` yourself. Add the server config to your MCP client, then the client launches the backend process and talks to it over stdin/stdout.
 
-Windows config:
+Windows config (use `CTF_WORKDIR` instead of the old `CTFTOOLKIT_WORKSPACE`):
 
 ```json
 {
@@ -173,20 +213,22 @@ Windows config:
       "command": "uv",
       "args": [
         "--directory",
-        "X:\\01 REPOSITORIES\\ctfsolver",
+        "C:\\ctfsolver",
         "run",
         "python",
         "-m",
         "ctf_core.server"
       ],
       "env": {
-        "CTFTOOLKIT_WORKSPACE": "X:\\01 REPOSITORIES\\ctfsolver\\workspace",
-        "CTFTOOLKIT_DB_PATH": "X:\\01 REPOSITORIES\\ctfsolver\\ctf_state.db"
+        "CTF_WORKDIR": "D:\\CTFs\\active"
       }
     }
   }
 }
 ```
+
+Run `setup_mcp.bat` or `uv run python scripts/setup.py --write` to generate `mcp.local.json`
+with your current `CTF_WORKDIR` already filled in.
 
 Use [mcp-windows.json](./mcp-windows.json) as the ready-to-paste Windows version. Use [mcp.json](./mcp.json) as the portable template. For a clone on another machine, run `setup_mcp.bat` or `uv run python scripts/setup.py --write --auth-check` and paste the generated `mcp.local.json` instead of hand-editing paths.
 
@@ -245,11 +287,32 @@ Common MCP client locations vary by app:
 
 If the backend appears to hang when run directly, that is normal. It is waiting for MCP JSON-RPC messages on stdin. Use `start_backend.bat` only to smoke-test startup/imports, not as the normal way to connect an AI client.
 
-Backend state is kept here:
+Backend state is kept in your **working directory** (`CTF_WORKDIR`), not in the repo:
 
-- `workspace/`
-- `ctf_state.db`
-- `logs/`
+- `<workdir>/` — challenge folders, agent working files
+- `<workdir>/ctf_state.db` — challenge and case state
+- `<workdir>/downloads/` — downloaded attachments
+- `<repo>/logs/` — backend process logs (repo-local)
+
+### Migrating Existing Workspace Folders
+
+If you previously ran ctfsolver with challenge folders inside `workspace/`, migrate them
+to your working directory with the included script:
+
+```bat
+uv run python scripts/migrate_workspace.py --dst "D:\CTFs\active"
+```
+
+Options:
+- `--src <path>` — source directory (default: `<repo>/workspace`)
+- `--dst <path>` — destination working directory (**required**)
+- `--dry-run` — print what would happen without moving anything
+
+The script is idempotent: re-running it skips folders that already exist at the destination.
+Unstructured folders (no `metadata.json`) get a stub `metadata.json` so the harness can
+recognise them. A `_migrated_from.txt` file is written in each destination folder for
+traceability. On clean completion, a `.gitkeep` is left in the repo `workspace/` dir.
+
 
 ### MCP Inspector
 You can validate the backend with the MCP Inspector:
@@ -292,14 +355,18 @@ The backend now lives in `src/ctf_core` with its Dockerfiles, skills, schemas, s
 
 Troubleshooting:
 
+- **`CTF_WORKDIR` not set**: pass `--workdir <path>` to the launcher, or set `CTF_WORKDIR` in `.env`.
+- Working directory inside the repo: the launcher will refuse — move it outside the repo.
+- Doctor reports `[FAIL] Working directory`: run `start_backend.bat --doctor` to see exactly what's wrong.
 - Docker missing or stopped: run Docker Desktop, then `start_backend.bat --doctor`.
 - Auth missing: sign in with Claude/Codex locally or set API keys in `.env`; rerun `setup_mcp.bat`.
-- MCP client cannot launch: regenerate `mcp.local.json` and paste that exact config into the client.
+- MCP client cannot launch: regenerate `mcp.local.json` (`setup_mcp.bat`) and paste the exact config.
 - Backend appears hung: stdio MCP servers wait for JSON-RPC on stdin; validate with MCP Inspector or `start_backend.bat --smoke`.
 - Need multiple local MCP clients: use `start_backend.bat --http --port 8000 --path /mcp`, then point clients at `http://127.0.0.1:8000/mcp`.
-- Dashboard agent cannot reach backend MCP: use `start_full.bat`; if you started Streamlit manually, also start `start_backend.bat --http --port 8000 --path /mcp` and set `CTF_HARNESS_AGENT_MCP_URL`.
+- Dashboard agent cannot reach backend MCP: use `start_full.bat`; if you started Streamlit manually, also start `start_backend.bat --http` and set `CTF_HARNESS_AGENT_MCP_URL`.
 - Network scan blocked: call `set_target_scope` with the authorized CTF host, URL, IP, or CIDR first.
-- Windows path problem: use absolute paths in `mcp.local.json`, and keep challenge files outside OneDrive when Docker needs to mount them.
+- Windows path problem: use absolute paths in `mcp.local.json`, keep challenge files outside OneDrive when Docker needs to mount them.
+- Session config (`~/.ctfsolver/config.json`) corrupted: delete the file and re-enter the workdir/platform via the sidebar.
 
 ## License
 

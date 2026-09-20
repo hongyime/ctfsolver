@@ -11,12 +11,16 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Default database path - use environment variable if set, otherwise project-relative
+# Default database path - derived from CTFTOOLKIT_DB_PATH or CTFTOOLKIT_WORKSPACE
 if os.environ.get("CTFTOOLKIT_DB_PATH"):
     DEFAULT_DB_PATH = Path(os.environ["CTFTOOLKIT_DB_PATH"])
+elif os.environ.get("CTFTOOLKIT_WORKSPACE"):
+    DEFAULT_DB_PATH = Path(os.environ["CTFTOOLKIT_WORKSPACE"]) / "ctf_state.db"
 else:
-    # Project-relative path
-    DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "ctf_state.db"
+    raise EnvironmentError(
+        "CTF_WORKDIR / CTFTOOLKIT_WORKSPACE is not set. "
+        "Pass --workdir to the launcher or set CTF_WORKDIR."
+    )
 
 
 class CTFDatabase:

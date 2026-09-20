@@ -82,7 +82,13 @@ def ingest_challenge_files(directory_path: str, challenge_id: str) -> dict[str, 
     if not src_dir.exists():
         raise ValueError(f"Directory not found: {directory_path}")
 
-    workspace_root = Path(os.environ.get("CTFTOOLKIT_WORKSPACE", "workspace"))
+    _env_ws = os.environ.get("CTFTOOLKIT_WORKSPACE")
+    if not _env_ws:
+        raise EnvironmentError(
+            "CTF_WORKDIR / CTFTOOLKIT_WORKSPACE is not set. "
+            "Pass --workdir to the launcher or set CTF_WORKDIR."
+        )
+    workspace_root = Path(_env_ws)
     dest_dir = workspace_root / challenge_id
     dest_dir.mkdir(parents=True, exist_ok=True)
 

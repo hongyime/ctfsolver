@@ -11,6 +11,7 @@
         "ctf_core.server"
       ],
       "env": {
+        "CTF_WORKDIR": "",
         "CTFTOOLKIT_WORKSPACE": "/REPLACE/WITH/ABSOLUTE/PATH/TO/ctfsolver/workspace",
         "CTFTOOLKIT_DB_PATH": "/REPLACE/WITH/ABSOLUTE/PATH/TO/ctfsolver/ctf_state.db"
       }

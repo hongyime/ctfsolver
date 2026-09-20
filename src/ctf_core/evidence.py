@@ -25,7 +25,11 @@ def default_workspace_path() -> Path:
 
         return Path(WORKSPACE_PATH)
     except Exception:
-        return Path(__file__).resolve().parents[2] / "workspace"
+        pass
+    raise EnvironmentError(
+        "CTF_WORKDIR / CTFTOOLKIT_WORKSPACE is not set. "
+        "Pass --workdir to the launcher or set CTF_WORKDIR."
+    )
 
 
 def evidence_log_path(workspace: str | Path | None = None) -> Path:

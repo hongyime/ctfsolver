@@ -24,6 +24,7 @@ from ctf_harness_app.agents import (
 from ctf_harness_app.agents import prepare_claude_auth_env, prepare_codex_auth_env
 from ctf_harness_app.config import DEFAULT_OUTPUT_DIR, load_dotenv
 from ctf_harness_app.ctfd import CTFdClient
+from ctf_harness_app.platforms import AuthError, get_connector, list_platforms
 from ctf_harness_app.toolkit import toolkit_status_snapshot
 from ctf_harness_app.workspace import (
     collect_dashboard,
@@ -38,6 +39,28 @@ from ctf_harness_app.workspace import (
 
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Session config helpers — scripts/ctfsolver_config.py is not a package
+# ---------------------------------------------------------------------------
+import importlib.util as _ilu_cfg
+
+_cfg_spec = _ilu_cfg.spec_from_file_location(
+    "ctfsolver_config",
+    Path(__file__).parent / "scripts" / "ctfsolver_config.py",
+)
+try:
+    _cfg_mod = _ilu_cfg.module_from_spec(_cfg_spec)  # type: ignore[arg-type]
+    _cfg_spec.loader.exec_module(_cfg_mod)  # type: ignore[union-attr]
+    _read_session_config = _cfg_mod.read_session_config
+    _write_session_config = _cfg_mod.write_session_config
+except Exception:
+
+    def _read_session_config() -> dict:  # type: ignore[misc]
+        return {}
+
+    def _write_session_config(_updates: dict) -> None:  # type: ignore[misc]
+        pass
 
 REFRESH_INTERVAL = "5s"
 LAST_MESSAGE_HEIGHT = 360
@@ -214,27 +237,93 @@ def render_sidebar(harness: dict[str, Any]) -> None:
     prepare_claude_auth_env()
     prepare_codex_auth_env()
     st.sidebar.header("CTF Harness")
-    st.session_state["output_dir"] = st.sidebar.text_input("Workspace", value=st.session_state.get("output_dir", DEFAULT_OUTPUT_DIR))
-    ctfd_url = st.sidebar.text_input("CTFd URL", value="https://ctfd.nusgreyhats.org/challenges")
 
+    # ------------------------------------------------------------------
+    # Workspace — pre-fill from saved config on first load
+    # ------------------------------------------------------------------
+    if "output_dir" not in st.session_state:
+        _saved_cfg = _read_session_config()
+        st.session_state["output_dir"] = _saved_cfg.get("workdir") or DEFAULT_OUTPUT_DIR
+
+    workdir = st.sidebar.text_input(
+        "Workspace",
+        value=st.session_state.get("output_dir", DEFAULT_OUTPUT_DIR),
+    )
+    st.session_state["output_dir"] = workdir
+    has_workdir = bool(workdir and workdir.strip())
+
+    # ------------------------------------------------------------------
+    # Platform selector — shown BEFORE credential fields
+    # ------------------------------------------------------------------
+    _platforms = list_platforms()
+    _platform_ids = [p["id"] for p in _platforms]
+    _platform_labels = {p["id"]: p["display_name"] for p in _platforms}
+
+    _prev_platform = st.session_state.get("platform", "ctfd")
+    if _prev_platform not in _platform_ids:
+        _prev_platform = "ctfd"
+
+    platform = st.sidebar.selectbox(
+        "Platform",
+        _platform_ids,
+        index=_platform_ids.index(_prev_platform),
+        format_func=lambda pid: _platform_labels.get(pid, pid),
+    )
+
+    # When platform switches, clear credential fields but keep workdir
+    if platform != _prev_platform:
+        st.session_state["platform"] = platform
+        for _k in ("ctfd_url", "ctfd_token", "rctf_url", "rctf_token"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+    st.session_state["platform"] = platform
+
+    # ------------------------------------------------------------------
+    # Platform-specific credential fields
+    # ------------------------------------------------------------------
+    ctfd_url = ""
+    if platform == "ctfd":
+        ctfd_url = st.sidebar.text_input(
+            "CTFd URL",
+            value=st.session_state.get("ctfd_url", "https://ctfd.nusgreyhats.org/challenges"),
+        )
+        st.session_state["ctfd_url"] = ctfd_url
+    elif platform == "rctf":
+        _rctf_url = st.sidebar.text_input(
+            "rCTF URL",
+            value=st.session_state.get("rctf_url", ""),
+        )
+        st.session_state["rctf_url"] = _rctf_url
+        _rctf_token = st.sidebar.text_input(
+            "Team token",
+            value=st.session_state.get("rctf_token", ""),
+            type="password",
+        )
+        st.session_state["rctf_token"] = _rctf_token
+    # Manual: no credential fields needed
+
+    # ------------------------------------------------------------------
+    # Auth / status chips
+    # ------------------------------------------------------------------
     token_state = "configured" if os.environ.get("CTFD_TOKEN") else "missing"
     claude_state = "configured" if has_claude_auth() else "missing"
     codex_state = "configured" if has_codex_auth() else "missing"
     toolkit_state = toolkit_status_snapshot()
-    st.sidebar.markdown(
-        " ".join(
-            [
-                chip(f"CTFd {token_state}", "green" if token_state == "configured" else "red"),
-                chip(f"Claude {claude_state}", "green" if claude_state == "configured" else "red"),
-                chip(f"Codex {codex_state}", "green" if codex_state == "configured" else "red"),
-                chip(
-                    f"Toolkit {toolkit_state['state']}",
-                    "green" if toolkit_state["ok"] else "yellow",
-                ),
-            ]
+
+    _chips_parts: list[str] = []
+    if not has_workdir:
+        _chips_parts.append(chip("no workspace", "red"))
+    if platform == "ctfd":
+        _chips_parts.append(chip(f"CTFd {token_state}", "green" if token_state == "configured" else "red"))
+    _chips_parts.extend([
+        chip(f"Claude {claude_state}", "green" if claude_state == "configured" else "red"),
+        chip(f"Codex {codex_state}", "green" if codex_state == "configured" else "red"),
+        chip(
+            f"Toolkit {toolkit_state['state']}",
+            "green" if toolkit_state["ok"] else "yellow",
         ),
-        unsafe_allow_html=True,
-    )
+    ])
+    st.sidebar.markdown(" ".join(_chips_parts), unsafe_allow_html=True)
     st.sidebar.caption(
         "Toolkit: "
         f"MCP {toolkit_state['mcp_tools']}, "
@@ -270,17 +359,30 @@ def render_sidebar(harness: dict[str, Any]) -> None:
             run_background("build-image", build_tools_image)
             st.rerun()
     with col2:
-        if st.button("Download", width='stretch'):
-            load_dotenv()
-            client = CTFdClient(ctfd_url)
-            run_background("download", download_challenges, client, output_dir())
-            st.rerun()
+        if st.button("Download", width='stretch', disabled=not has_workdir):
+            if not has_workdir:
+                st.sidebar.error("Set a working directory first")
+            elif platform == "ctfd":
+                load_dotenv()
+                client = CTFdClient(ctfd_url)
+                run_background("download", download_challenges, client, output_dir())
+                _write_session_config({"workdir": workdir, "platform": platform, "platform_url": ctfd_url, "platform_username": ""})
+                st.rerun()
+            elif platform == "rctf":
+                st.sidebar.info("rCTF download: add challenges to the workspace manually.")
+            else:
+                st.sidebar.info("Manual mode: place challenge files in the workspace directory.")
 
-    if st.sidebar.button("Refresh solved from CTFd", width="stretch"):
-        load_dotenv()
-        client = CTFdClient(ctfd_url)
-        run_background("refresh-solved", refresh_solved_from_ctfd, client, output_dir())
-        st.rerun()
+    if platform == "ctfd":
+        if st.sidebar.button("Refresh solved from CTFd", width="stretch", disabled=not has_workdir):
+            if not has_workdir:
+                st.sidebar.error("Set a working directory first")
+            else:
+                load_dotenv()
+                client = CTFdClient(ctfd_url)
+                run_background("refresh-solved", refresh_solved_from_ctfd, client, output_dir())
+                _write_session_config({"workdir": workdir, "platform": platform, "platform_url": ctfd_url, "platform_username": ""})
+                st.rerun()
 
     if harness.get("solved_refreshed_at"):
         st.sidebar.caption(f"Solved refreshed: {harness['solved_refreshed_at']}")

@@ -11,9 +11,20 @@ if defined PYTHONPATH (
   set "PYTHONPATH=%ROOT%src"
 )
 
-if not defined CTFTOOLKIT_WORKSPACE set "CTFTOOLKIT_WORKSPACE=%ROOT%workspace"
-if not defined CTFTOOLKIT_DB_PATH set "CTFTOOLKIT_DB_PATH=%ROOT%ctf_state.db"
-if not defined CTFTOOLKIT_DOWNLOADS set "CTFTOOLKIT_DOWNLOADS=%ROOT%downloads"
+rem -- workdir: --workdir flag > CTF_WORKDIR env > fallback to error (no repo default)
+if /I "%~1"=="--workdir" (
+  set "CTF_WORKDIR=%~2"
+  shift /1
+  shift /1
+)
+if defined CTF_WORKDIR (
+  set "CTFTOOLKIT_WORKSPACE=%CTF_WORKDIR%"
+) else if not defined CTFTOOLKIT_WORKSPACE (
+  echo [ERROR] No working directory set. Use --workdir ^<path^> or set CTF_WORKDIR.
+  endlocal & exit /b 1
+)
+if not defined CTFTOOLKIT_DB_PATH set "CTFTOOLKIT_DB_PATH=%CTFTOOLKIT_WORKSPACE%\ctf_state.db"
+if not defined CTFTOOLKIT_DOWNLOADS set "CTFTOOLKIT_DOWNLOADS=%CTFTOOLKIT_WORKSPACE%\downloads"
 if not defined CTF_HARNESS_AGENT_MCP_URL set "CTF_HARNESS_AGENT_MCP_URL=http://127.0.0.1:8000/mcp"
 
 if not exist "%CTFTOOLKIT_WORKSPACE%" mkdir "%CTFTOOLKIT_WORKSPACE%"

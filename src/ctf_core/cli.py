@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import questionary
 from rich.console import Console
@@ -187,7 +188,15 @@ def _print_file_inventory(inventory: dict) -> None:
 def _list_challenges() -> None:
     try:
         import sqlite3, os
-        db_path = os.environ.get("CTFTOOLKIT_DB_PATH", "ctf_state.db")
+        _ws = os.environ.get("CTFTOOLKIT_WORKSPACE")
+        db_path = os.environ.get("CTFTOOLKIT_DB_PATH") or (
+            str(Path(_ws) / "ctf_state.db") if _ws else None
+        )
+        if not db_path:
+            raise EnvironmentError(
+                "CTF_WORKDIR / CTFTOOLKIT_WORKSPACE is not set. "
+                "Pass --workdir to the launcher or set CTF_WORKDIR."
+            )
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
         rows = con.execute("SELECT challenge_id, name, category, status FROM challenges ORDER BY created_at DESC LIMIT 50").fetchall()
@@ -252,7 +261,15 @@ def _show_db_menu() -> None:
 
     try:
         import sqlite3
-        db_path = os.environ.get("CTFTOOLKIT_DB_PATH", "ctf_state.db")
+        _ws = os.environ.get("CTFTOOLKIT_WORKSPACE")
+        db_path = os.environ.get("CTFTOOLKIT_DB_PATH") or (
+            str(Path(_ws) / "ctf_state.db") if _ws else None
+        )
+        if not db_path:
+            raise EnvironmentError(
+                "CTF_WORKDIR / CTFTOOLKIT_WORKSPACE is not set. "
+                "Pass --workdir to the launcher or set CTF_WORKDIR."
+            )
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
 
@@ -319,9 +336,10 @@ def _health_check() -> None:
     internet = _is_internet_available()
     console.print(f"Internet: {'[green]OK[/green]' if internet else '[red]OFFLINE[/red]'}")
 
-    db_path = os.environ.get("CTFTOOLKIT_DB_PATH", "ctf_state.db")
-    db_ok = os.path.exists(db_path)
-    console.print(f"Database: {'[green]OK[/green]' if db_ok else '[red]NOT FOUND[/red]'} ({db_path})")
+    _ws = os.environ.get("CTFTOOLKIT_WORKSPACE")
+    db_path = os.environ.get("CTFTOOLKIT_DB_PATH") or (str(Path(_ws) / "ctf_state.db") if _ws else "")
+    db_ok = bool(db_path) and os.path.exists(db_path)
+    console.print(f"Database: {'[green]OK[/green]' if db_ok else '[red]NOT FOUND[/red]'} ({db_path or 'no workspace configured'})")
 
     try:
         import docker
