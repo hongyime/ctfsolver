@@ -1,0 +1,124 @@
+# docker-compose.ctfsolver.yml — run the ctfsolver app stack
+#
+# This is the "friend setup" file. It runs ctfsolver itself in a container
+# so your friend doesn't need Python, uv, or anything else installed locally
+# except Docker.
+#
+# Prerequisites on the host:
+#   1. Docker (with Compose v2)
+#   2. The CTF tool images built:
+#        docker compose -f docker-compose.yml build
+#   3. Create a .env file (copy from .env.example) and set CTF_WORKDIR
+#
+# Quick start:
+#   cp .env.example .env
+#   # Edit .env: set CTF_WORKDIR=/absolute/path/to/your/ctf-workdir
+#   docker compose -f docker-compose.ctfsolver.yml up
+#
+# Dashboard: http://localhost:8501
+# MCP HTTP:  http://localhost:8000/mcp
+#
+# For parallel CTFs (two separate workdirs):
+#   CTF_WORKDIR=/ctfs/tisc    MCP_PORT=8000  docker compose -f docker-compose.ctfsolver.yml -p tisc up -d
+#   CTF_WORKDIR=/ctfs/cyber   MCP_PORT=8001  docker compose -f docker-compose.ctfsolver.yml -p cyber up -d
+#
+# Notes:
+#   - The Docker socket bind-mount (/var/run/docker.sock) is required so
+#     ctfsolver can spawn per-challenge tool containers (DooD pattern).
+#   - On macOS with Docker Desktop the socket is at
+#     ~/.docker/run/docker.sock — set DOCKER_SOCKET in your .env if needed.
+#   - On Windows: run in WSL2 or set DOCKER_SOCKET=//var/run/docker.sock.
+#   - Agent auth files (~/.claude, ~/.codex, etc.) are bind-mounted read-only
+#     so agents inside tool containers can authenticate. Remove any you don't use.
+
+services:
+
+  # ── ctfsolver dashboard ────────────────────────────────────────────────────
+  ctfsolver:
+    build:
+      context: .
+      dockerfile: Dockerfile.ctfsolver
+    image: ctfsolver:latest
+    restart: unless-stopped
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+      - "${MCP_PORT:-8000}:8000"
+    volumes:
+      # Host Docker socket — required for spawning CTF tool containers (DooD)
+      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+      # Working directory — all challenge files, DB, and downloads live here
+      - "${CTF_WORKDIR:?Set CTF_WORKDIR in .env or environment}:/ctf-workdir"
+      # Agent auth files (read-only; remove any you don't have)
+      - "${HOME}/.claude:/root/.claude:ro"
+      - "${HOME}/.codex:/root/.codex:ro"
+      - "${HOME}/.kiro:/root/.kiro:ro"
+      - "${HOME}/.aws:/root/.aws:ro"
+      - "${HOME}/.local/share/opencode:/root/.local/share/opencode:ro"
+      - "${HOME}/.config/opencode:/root/.config/opencode:ro"
+    environment:
+      - CTF_WORKDIR=/ctf-workdir
+      - CTFTOOLKIT_WORKSPACE=/ctf-workdir
+      - CTFTOOLKIT_DB_PATH=/ctf-workdir/ctf_state.db
+      - CTFTOOLKIT_DOWNLOADS=/ctf-workdir/downloads
+      # MCP HTTP backend auto-started by start_full behaviour is not used here;
+      # the MCP backend is a separate service below.
+      - CTF_HARNESS_START_AGENT_MCP=0
+      - CTF_HARNESS_AGENT_MCP_URL=http://mcp-backend:8000/mcp
+      - PYTHONUTF8=1
+    env_file:
+      - .env
+    depends_on:
+      mcp-backend:
+        condition: service_healthy
+    networks:
+      - ctfsolver-net
+
+  # ── MCP HTTP backend ───────────────────────────────────────────────────────
+  mcp-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.ctfsolver
+    image: ctfsolver:latest
+    restart: unless-stopped
+    command:
+      - uv
+      - run
+      - python
+      - scripts/mcp_http.py
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --path
+      - /mcp
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    volumes:
+      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+      - "${CTF_WORKDIR:?Set CTF_WORKDIR in .env or environment}:/ctf-workdir"
+      - "${HOME}/.claude:/root/.claude:ro"
+      - "${HOME}/.codex:/root/.codex:ro"
+      - "${HOME}/.kiro:/root/.kiro:ro"
+      - "${HOME}/.aws:/root/.aws:ro"
+      - "${HOME}/.local/share/opencode:/root/.local/share/opencode:ro"
+      - "${HOME}/.config/opencode:/root/.config/opencode:ro"
+    environment:
+      - CTF_WORKDIR=/ctf-workdir
+      - CTFTOOLKIT_WORKSPACE=/ctf-workdir
+      - CTFTOOLKIT_DB_PATH=/ctf-workdir/ctf_state.db
+      - CTFTOOLKIT_DOWNLOADS=/ctf-workdir/downloads
+      - PYTHONUTF8=1
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/mcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - ctfsolver-net
+
+networks:
+  ctfsolver-net:
+    driver: bridge

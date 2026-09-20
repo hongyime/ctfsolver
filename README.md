@@ -16,10 +16,47 @@ This repository contains a local Streamlit dashboard and testing harness designe
 Internal package/env names such as `ctf_core` and `CTFTOOLKIT_*` are retained for compatibility.
 
 ## 2. Prerequisites
-Ensure the following tools are installed on the host system:
-- **Python**: `>=3.12`
-- **Docker Engine**: Required to build the custom `Dockerfile.ctf-tools` image and spawn per-challenge containers.
-- **uv**: Python package and project manager (recommended over standard `pip` for rapid virtual environment caching).
+
+### Option A — Native (Windows / macOS / Linux)
+
+| Tool | Windows | macOS | Linux |
+| :--- | :--- | :--- | :--- |
+| **Python ≥ 3.12** | [python.org](https://python.org) or `winget install Python.Python.3.12` | `brew install python@3.12` | `apt install python3.12` / `dnf install python3.12` |
+| **Docker Engine** | Docker Desktop | Docker Desktop | Docker Engine (`apt install docker.io`) |
+| **uv** | `winget install astral-sh.uv` or `irm https://astral.sh/uv/install.ps1 \| iex` | `brew install uv` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **libmagic** | bundled via `python-magic-bin` (auto) | `brew install libmagic` | `apt install libmagic1` |
+
+Make the `.sh` scripts executable after cloning (Mac/Linux only):
+```bash
+chmod +x start_backend.sh start_full.sh setup_mcp.sh
+```
+
+### Option B — Docker (easiest for friends / CI)
+
+Only Docker is required. No Python, no uv, no libmagic.
+```bash
+# 1. Build the CTF tool images (once)
+docker compose -f docker-compose.yml build
+
+# 2. Build the ctfsolver app image (once)
+docker build -t ctfsolver:latest -f Dockerfile.ctfsolver .
+
+# 3. Set your working directory
+export CTF_WORKDIR=/absolute/path/to/ctf-workdir   # Mac/Linux
+# or in .env: CTF_WORKDIR=D:\CTFs\active            # Windows
+
+# 4. Launch
+docker compose -f docker-compose.ctfsolver.yml up
+```
+Dashboard → http://localhost:8501  |  MCP HTTP → http://localhost:8000/mcp
+
+> **macOS Docker socket**: Docker Desktop on Mac uses `~/.docker/run/docker.sock`.
+> Set `DOCKER_SOCKET=$HOME/.docker/run/docker.sock` in `.env` if the default
+> `/var/run/docker.sock` mount fails.
+>
+> **Windows Docker socket**: Named pipes can't be bind-mounted into Linux containers.
+> Run Docker Desktop with WSL2 backend (default since Docker Desktop 4.x) and use the
+> WSL2 socket at `/var/run/docker.sock` inside a WSL2 terminal.
 
 ## 3. Environment Configuration
 The application relies strictly on environment variables for API authentication and tooling preferences. You must copy the provided `.env.example` file to `.env` and populate the necessary rows.

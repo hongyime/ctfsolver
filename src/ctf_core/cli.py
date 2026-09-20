@@ -370,6 +370,6 @@ def _list_docker_images() -> None:
                 tags = ", ".join(img.tags) if img.tags else img.id[:12]
                 console.print(f"  {tags}")
         else:
-            console.print("[yellow]No ctftoolkit Docker images found. Run setup.bat to build them.[/yellow]")
+            console.print("[yellow]No ctftoolkit Docker images found. Run 'docker compose build' (Linux/macOS) or 'setup_mcp.bat' (Windows) to build them.[/yellow]")
     except Exception as e:
         console.print(f"[red]Docker error: {e}[/red]")

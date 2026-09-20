@@ -19,7 +19,7 @@ def test_manifest_generation_preserves_known_inventory() -> None:
         "skill_docs": 33,
         "dockerfiles": 8,
         "schemas": 2,
-        "launchers": 5,
+        "launchers": 8,
         "docs_toolkit_assets": 13,
     }
 

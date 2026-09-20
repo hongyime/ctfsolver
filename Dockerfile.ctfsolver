@@ -1,0 +1,68 @@
+# Dockerfile.ctfsolver — containerised ctfsolver app (dashboard + MCP backend)
+#
+# This image runs the ctfsolver Streamlit dashboard and/or the MCP stdio/HTTP
+# backend. It does NOT contain CTF tool binaries — those live in the separate
+# ctf-ai-solver / ctftoolkit/* images built by Dockerfile.ctf-tools and
+# docker-compose.yml. This image uses Docker-out-of-Docker (DooD): it talks to
+# the host Docker daemon via the bind-mounted socket.
+#
+# Build:
+#   docker build -t ctfsolver:latest -f Dockerfile.ctfsolver .
+#
+# Run (dashboard, see docker-compose.ctfsolver.yml for the full stack):
+#   docker run --rm -it \
+#     -v /var/run/docker.sock:/var/run/docker.sock \
+#     -v /path/to/ctf-workdir:/ctf-workdir \
+#     -e CTF_WORKDIR=/ctf-workdir \
+#     -p 8501:8501 -p 8000:8000 \
+#     ctfsolver:latest
+
+FROM python:3.12-slim
+
+# System deps: libmagic (python-magic on non-Windows), git for any VCS ops
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmagic1 \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv — the project's package manager
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
+
+WORKDIR /ctfsolver
+
+# Copy dependency manifests first for layer caching
+COPY pyproject.toml uv.lock ./
+
+# Sync deps (no dev group, no editable install)
+RUN uv sync --no-dev --frozen
+
+# Copy the rest of the source
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY schema/ ./schema/
+COPY skills/ ./skills/
+COPY docker/ ./docker/
+COPY docs/ ./docs/
+COPY toolkit_manifest.json ./
+COPY streamlit_app.py main.py ./
+COPY mcp.json mcp-unix.json ./
+
+# Workspace placeholder — actual workdir is bind-mounted at runtime
+RUN mkdir -p /ctf-workdir /ctfsolver/logs
+
+# Expose Streamlit dashboard and MCP HTTP backend
+EXPOSE 8501 8000
+
+ENV PYTHONUTF8=1
+ENV PYTHONPATH=/ctfsolver/src
+# CTF_WORKDIR must be supplied at runtime via -e or docker-compose env
+ENV CTF_WORKDIR=/ctf-workdir
+ENV CTFTOOLKIT_WORKSPACE=/ctf-workdir
+
+# Default: start the Streamlit dashboard
+# Override CMD to run the MCP backend instead:
+#   docker run ... ctfsolver:latest uv run python -m ctf_core.server
+CMD ["uv", "run", "streamlit", "run", "streamlit_app.py", \
+     "--server.address=0.0.0.0", "--server.port=8501"]

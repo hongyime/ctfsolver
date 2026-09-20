@@ -2,7 +2,7 @@
   "counts": {
     "dockerfiles": 8,
     "docs_toolkit_assets": 13,
-    "launchers": 5,
+    "launchers": 8,
     "mcp_tools": 114,
     "registry_tools": 72,
     "schemas": 2,
@@ -39,8 +39,11 @@
       "mcp-windows.json",
       "mcp.json",
       "setup_mcp.bat",
+      "setup_mcp.sh",
       "start_backend.bat",
-      "start_full.bat"
+      "start_backend.sh",
+      "start_full.bat",
+      "start_full.sh"
     ],
     "mcp_tools": [
       "add_case_note",

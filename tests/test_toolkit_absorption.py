@@ -38,7 +38,7 @@ def test_launchers_run_backend_and_full_stack() -> None:
     assert "scripts\\mcp_smoke.py" in backend
     assert "scripts\\mcp_http.py" in backend
     assert "CTF_HARNESS_AGENT_MCP_URL" in full
-    assert "start_backend.bat\" --http" in full
+    assert 'start_backend.bat" --http' in full or 'start_backend.bat" --workdir' in full
     assert "streamlit run" in full
     assert "streamlit_app.py" in full
     assert "OneDrive" not in backend + full

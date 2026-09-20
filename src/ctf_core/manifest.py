@@ -92,6 +92,7 @@ def discover_schemas(root: Path | None = None) -> list[str]:
 def discover_launchers(root: Path | None = None) -> list[str]:
     project_root = root or repo_root()
     paths = list(project_root.glob("*.bat"))
+    paths.extend(project_root.glob("*.sh"))
     paths.extend(project_root / name for name in MAIN_MCP_CONFIGS)
     return _existing_relative_files(project_root, paths)
 

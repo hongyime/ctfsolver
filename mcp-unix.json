@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "ctfsolver": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/REPLACE/WITH/ABSOLUTE/PATH/TO/ctfsolver",
+        "run",
+        "python",
+        "-m",
+        "ctf_core.server"
+      ],
+      "env": {
+        "CTF_WORKDIR": "/REPLACE/WITH/ABSOLUTE/PATH/TO/your-ctf-workdir",
+        "PYTHONUTF8": "1"
+      }
+    }
+  }
+}
