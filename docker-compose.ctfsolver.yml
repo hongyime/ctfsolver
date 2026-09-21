@@ -23,13 +23,18 @@
 #   CTF_WORKDIR=/ctfs/cyber   MCP_PORT=8001  docker compose -f docker-compose.ctfsolver.yml -p cyber up -d
 #
 # Notes:
-#   - The Docker socket bind-mount (/var/run/docker.sock) is required so
-#     ctfsolver can spawn per-challenge tool containers (DooD pattern).
-#   - On macOS with Docker Desktop the socket is at
-#     ~/.docker/run/docker.sock — set DOCKER_SOCKET in your .env if needed.
-#   - On Windows: run in WSL2 or set DOCKER_SOCKET=//var/run/docker.sock.
-#   - Agent auth files (~/.claude, ~/.codex, etc.) are bind-mounted read-only
-#     so agents inside tool containers can authenticate. Remove any you don't use.
+#   - The Docker socket bind-mount is required so ctfsolver can spawn
+#     per-challenge tool containers (Docker-out-of-Docker pattern).
+#   - DOCKER_SOCKET is auto-detected from the environment when you use the
+#     .sh launchers. For plain 'docker compose up', detection order is:
+#       macOS Docker Desktop : ~/.docker/run/docker.sock
+#       Colima (macOS/Linux) : ~/.colima/default/docker.sock
+#       Rancher Desktop      : ~/.rd/docker.sock
+#       Linux / WSL2         : /var/run/docker.sock
+#     You can override by setting DOCKER_SOCKET in .env or your shell.
+#   - On Windows: run from WSL2 (Docker socket is /var/run/docker.sock there).
+#   - Agent auth files (~/.claude, ~/.codex, etc.) are bind-mounted read-only.
+#     Remove lines for agents you don't use.
 
 services:
 

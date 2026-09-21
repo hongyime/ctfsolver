@@ -50,13 +50,19 @@ docker compose -f docker-compose.ctfsolver.yml up
 ```
 Dashboard → http://localhost:8501  |  MCP HTTP → http://localhost:8000/mcp
 
-> **macOS Docker socket**: Docker Desktop on Mac uses `~/.docker/run/docker.sock`.
-> Set `DOCKER_SOCKET=$HOME/.docker/run/docker.sock` in `.env` if the default
-> `/var/run/docker.sock` mount fails.
+> **Docker socket auto-detection**: The `.sh` launchers and the Python platform
+> layer auto-detect the correct socket path in this order:
+> `~/.docker/run/docker.sock` (Docker Desktop macOS/Linux) →
+> `~/.colima/default/docker.sock` (Colima) →
+> `~/.rd/docker.sock` (Rancher Desktop) →
+> `/var/run/docker.sock` (Linux / WSL2) →
+> `$XDG_RUNTIME_DIR/docker.sock` (rootless Docker).
+> No manual configuration needed in the common case.
+> Override anytime with `DOCKER_SOCKET=/path/to/docker.sock` or `DOCKER_HOST=unix:///path` in `.env` or your shell.
 >
 > **Windows Docker socket**: Named pipes can't be bind-mounted into Linux containers.
-> Run Docker Desktop with WSL2 backend (default since Docker Desktop 4.x) and use the
-> WSL2 socket at `/var/run/docker.sock` inside a WSL2 terminal.
+> Run Docker Desktop with WSL2 backend (default since Docker Desktop 4.x) and open a WSL2 terminal —
+> the socket will be at `/var/run/docker.sock` automatically.
 
 ## 3. Environment Configuration
 The application relies strictly on environment variables for API authentication and tooling preferences. You must copy the provided `.env.example` file to `.env` and populate the necessary rows.

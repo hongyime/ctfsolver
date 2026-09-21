@@ -17,6 +17,22 @@ else
   export PYTHONPATH="$ROOT/src"
 fi
 
+# -- Docker socket auto-detection (macOS / Linux / WSL2 / Colima / Rancher)
+if [ -z "${DOCKER_SOCKET:-}" ] && [ -z "${DOCKER_HOST:-}" ]; then
+  for _sock in \
+      "${HOME}/.docker/run/docker.sock" \
+      "${HOME}/.colima/default/docker.sock" \
+      "${HOME}/.rd/docker.sock" \
+      "/var/run/docker.sock" \
+      "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/docker.sock"; do
+    if [ -S "$_sock" ]; then
+      export DOCKER_SOCKET="$_sock"
+      export DOCKER_HOST="unix://$_sock"
+      break
+    fi
+  done
+fi
+
 # -- workdir: --workdir flag > CTF_WORKDIR env > fallback to error (no repo default)
 if [ "${1:-}" = "--workdir" ]; then
   export CTF_WORKDIR="$2"

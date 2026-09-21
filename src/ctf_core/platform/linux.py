@@ -62,8 +62,32 @@ class LinuxAdapter:
         return None
     
     def get_docker_socket_path(self) -> str:
-        """Get Docker socket path for Linux."""
-        return '/var/run/docker.sock'
+        """Auto-detect Docker socket path on Linux / WSL2.
+
+        Probes DOCKER_HOST, then known socket paths so rootless Docker and
+        WSL2 users don't need manual configuration.
+        """
+        import os
+        # Respect explicit DOCKER_HOST override
+        docker_host = os.environ.get('DOCKER_HOST', '')
+        if docker_host and docker_host.startswith('unix://'):
+            return docker_host[len('unix://'):]
+
+        home = os.path.expanduser('~')
+        xdg_runtime = os.environ.get('XDG_RUNTIME_DIR', '')
+        candidates = [
+            '/var/run/docker.sock',                                  # standard + WSL2
+            os.path.join(home, '.docker', 'run', 'docker.sock'),   # Docker Desktop Linux
+            os.path.join(home, '.colima', 'default', 'docker.sock'), # Colima on Linux
+            os.path.join(home, '.rd', 'docker.sock'),               # Rancher Desktop
+        ]
+        if xdg_runtime:
+            candidates.insert(0, os.path.join(xdg_runtime, 'docker.sock'))  # rootless Docker (highest prio)
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return '/var/run/docker.sock'  # default even if daemon not yet running
     
     def get_default_workspace(self) -> str:
         """Get default workspace path for Linux."""

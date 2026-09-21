@@ -77,19 +77,45 @@ class PlatformInfo:
         return True
     
     def get_docker_socket(self) -> Optional[str]:
-        """Get Docker socket path for current platform."""
-        if self.platform == PlatformType.LINUX:
-            return 'unix:///var/run/docker.sock'
-        elif self.platform == PlatformType.MACOS:
-            # Docker Desktop on macOS
-            return f'unix://{os.path.expanduser("~/.docker/run/docker.sock")}'
-        elif self.platform == PlatformType.WINDOWS:
-            if self.wsl_available:
-                # WSL2 Docker
-                return 'unix:///var/run/docker.sock'
-            else:
-                # Windows native Docker
-                return 'npipe:////./pipe/docker_engine'
+        """Auto-detect the Docker socket path for the current platform.
+
+        Priority order:
+        1. ``DOCKER_HOST`` env var (always wins if set)
+        2. Probe known socket paths in order (existence check via os.path.exists)
+           - macOS Docker Desktop: ~/.docker/run/docker.sock
+           - Colima:               ~/.colima/default/docker.sock
+           - Rancher Desktop:      ~/.rd/docker.sock
+           - Linux / WSL2 standard: /var/run/docker.sock
+           - Rootless Docker (Linux): $XDG_RUNTIME_DIR/docker.sock
+        3. Windows native named pipe (no existence check possible)
+        4. None → caller falls back to docker.from_env()
+        """
+        # 1. Explicit DOCKER_HOST override
+        docker_host = os.environ.get('DOCKER_HOST', '')
+        if docker_host:
+            return docker_host
+
+        if self.platform == PlatformType.WINDOWS and not self.wsl_available:
+            # Windows native — named pipe, cannot stat
+            return 'npipe:////./pipe/docker_engine'
+
+        # 2. Probe Unix socket candidates in priority order
+        home = os.path.expanduser('~')
+        xdg_runtime = os.environ.get('XDG_RUNTIME_DIR', '')
+        candidates = [
+            os.path.join(home, '.docker', 'run', 'docker.sock'),   # Docker Desktop macOS / Linux
+            os.path.join(home, '.colima', 'default', 'docker.sock'), # Colima (macOS/Linux)
+            os.path.join(home, '.rd', 'docker.sock'),               # Rancher Desktop
+            '/var/run/docker.sock',                                  # Linux + Docker Desktop macOS symlink + WSL2
+        ]
+        if xdg_runtime:
+            candidates.append(os.path.join(xdg_runtime, 'docker.sock'))  # rootless Docker
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return f'unix://{candidate}'
+
+        # 3. Nothing found — let docker.from_env() try its own detection
         return None
     
     def get_workspace_path(self, base_path: str) -> str:

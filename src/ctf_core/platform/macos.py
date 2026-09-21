@@ -57,10 +57,24 @@ class MacOSAdapter:
         return os.path.exists(rosetta_path)
     
     def get_docker_socket_path(self) -> str:
-        """Get Docker socket path for macOS."""
-        # Docker Desktop on macOS uses this socket
-        return os.path.expanduser("~/.docker/run/docker.sock")
-    
+        """Auto-detect Docker socket path on macOS.
+
+        Probes known locations in order so Colima / Rancher Desktop users
+        don't have to set anything manually.  Falls back to the Docker
+        Desktop default if nothing is found (daemon may not be running yet).
+        """
+        import os as _os
+        home = _os.path.expanduser('~')
+        candidates = [
+            _os.path.join(home, '.docker', 'run', 'docker.sock'),    # Docker Desktop
+            _os.path.join(home, '.colima', 'default', 'docker.sock'), # Colima
+            _os.path.join(home, '.rd', 'docker.sock'),                # Rancher Desktop
+            '/var/run/docker.sock',                                   # legacy symlink
+        ]
+        for candidate in candidates:
+            if _os.path.exists(candidate):
+                return candidate
+        return _os.path.join(home, '.docker', 'run', 'docker.sock')
     def get_default_workspace(self) -> str:
         """Get default workspace path for macOS."""
         return str(Path.home() / "ctftoolkit" / "workspace")
