@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     env:
       PYTHONPATH: src
-      CTF_WORKDIR: ${{ github.workspace }}\.ctf-workdir
+      CTFTOOLKIT_WORKSPACE: ${{ github.workspace }}\.ctf-workdir
 
     steps:
       - name: Check out repository
