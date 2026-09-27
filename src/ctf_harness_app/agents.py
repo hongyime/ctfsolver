@@ -681,7 +681,7 @@ def docker_command(challenge_dir: Path, inner_command: list[str], image: str = D
                 shutil.copy2(source, home / ".kiro" / name)
         # Copy ~/.kiro subdirs that hold agent definitions and settings.
         # Skip logs/sessions/session-index (ephemeral, large) and skills/steering/powers
-        # (they're often OneDrive-symlinked reparse points on Bryan's setup, cause
+        # (they're often OneDrive-symlinked reparse points on the local operator's setup, cause
         # WinError 3 during copytree, and aren't needed for container-side chat).
         kiro_subdirs_to_copy = ("agents", "settings", "extensions", "tasks")
         for subdir in kiro_subdirs_to_copy:

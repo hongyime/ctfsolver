@@ -28,7 +28,7 @@ Internal package/env names such as `ctf_core` and `CTFTOOLKIT_*` are retained fo
 
 Make the `.sh` scripts executable after cloning (Mac/Linux only):
 ```bash
-chmod +x start_backend.sh start_full.sh setup_mcp.sh
+chmod +x start_backend.sh start_full.bash setup_mcp.sh
 ```
 
 ### Option B — Docker (easiest for friends / CI)
@@ -250,10 +250,10 @@ so the MCP HTTP backends don't fight over the same port:
 
 ```bat
 rem Terminal 1 — TISC
-start_full.bat --workdir "C:\Users\bryan\OneDrive\01 CTF\2026 TISC CTF" --port 8000
+start_full.bat --workdir "D:\CTFs\tisc" --port 8000
 
 rem Terminal 2 — CyberLeague (different port!)
-start_full.bat --workdir "C:\Users\bryan\OneDrive\01 CTF\2026 CYBER LEAGUE MAJOR CTF" --port 8001
+start_full.bat --workdir "D:\CTFs\cyberleague" --port 8001
 ```
 
 Streamlit auto-increments its own port (8501, 8502…) so the browser UIs don't collide.
@@ -439,6 +439,96 @@ Troubleshooting:
 - Windows path problem: use absolute paths in `mcp.local.json`, keep challenge files outside OneDrive when Docker needs to mount them.
 - Session config (`~/.ctfsolver/config.json`) corrupted: delete the file and re-enter the workdir/platform via the sidebar.
 
+### Linux host launchers
+
+Install Python 3.12+, `uv`, and the system `libmagic` library (on Debian/Ubuntu,
+`sudo apt install libmagic1`). Windows retains `python-magic-bin`; other platforms
+use `python-magic` with the system library. Run `uv sync --locked --all-groups`
+once, then again when the dependency manifests change. Keep Windows and Linux
+virtual environments separate; an SMB checkout is not a shared virtual environment.
+
+From the checkout, use these equivalents of the Windows batch launchers:
+
+```sh
+export CTF_WORKDIR=/absolute/path/to/ctf-workdir
+bash setup_mcp.sh
+bash start_backend.sh --doctor
+bash start_backend.sh --smoke
+```
+
+Setup explicitly writes local MCP configuration and checks authentication. These
+are operator commands, not offline tests. For stdio MCP, the client normally starts
+`bash /path/to/checkout/start_backend.sh` itself. Arguments and child exit codes are
+preserved, including paths containing spaces.
+
+For the dashboard, keep the local backend in its own terminal so its lifetime is
+visible and controllable:
+
+```sh
+# Terminal 1
+bash start_backend.sh --http --host 127.0.0.1 --port 8000 --path /mcp
+# Terminal 2
+CTF_HARNESS_START_AGENT_MCP=0 bash start_full.sh
+```
+
+The Linux dashboard launcher does not spawn background processes. It uses
+`http://127.0.0.1:8000/mcp` unless `CTF_HARNESS_AGENT_MCP_URL` is set explicitly.
+Stop each foreground process with Ctrl+C. Windows batch launchers retain their
+existing behavior. On Linux SMB mounts, invoke scripts with `sh` even when execute
+bits are unavailable; container bind paths must exist on the Docker daemon host.
+
+Offline launcher verification on either platform:
+`python -m unittest discover -s tests -p test_portable_launchers.py -v`.
+POSIX process contracts run on Linux; dependency-marker checks run on both systems.
+The contracts use a disposable `uv` stub and never start Docker, agents, or targets.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+### Container helper source edits
+
+The host application and the toolchain images have separate lifecycles. Existing toolchain dependencies are built once and rebuilt when their dependency definitions change. From a source checkout, the Docker runner now bind-mounts the USB HID helper and the two Ghidra Python helpers read-only, so editing them does not require rebuilding an image. The USB helper runs through Python and does not depend on an executable file bit.
+
+The checkout paths must be accessible to the Docker daemon, including when this workspace is reached over SMB. Start the host application on the daemon host or use a checkout shared with that daemon. A running warm Ghidra session has already loaded its broker: end it and start a new session to load broker changes. This stateful tool session is not a hot-reloading development server. No image build or tool-container runtime was performed during this maintenance; isolated fixture tests covered mount targets, read-only flags, Windows path adaptation, and checkout-boundary rejection.
+
+## Remote tool-image builds and explicit local pulls
+
+The web app stays a host Streamlit process; Compose describes seven batch
+toolchain images, not a web deployment. Source helpers are mounted as described
+above. Editing those scripts does not require an image build. A running warm
+Ghidra broker retains its loaded Python code until you start a new tool session.
+Toolchain dependency/system-package changes still require rebuilding the image.
+
+GitHub Actions now builds and pushes the seven images on main when Docker inputs
+change, or on manual dispatch. Buildx caches dependencies in GHA. The production
+stage names identify the complete toolboxes: compilers/debuggers are intentional
+runtime tools here, so removing them would break supported exercises. Image sizes
+are unknown until CI, and these images are unlikely to meet a 200 MB app-image target.
+
+Local image names remain ctftoolkit/ctf-<tool>; Compose uses pull_policy: never.
+The existing explicit initial `docker compose build` remains available. Alternatively,
+download a published production image only when you deliberately run these commands:
+
+~~~sh
+docker pull ghcr.io/hongyime/ctfsolver/ctf-tools:latest
+docker tag ghcr.io/hongyime/ctfsolver/ctf-tools:latest ctftoolkit/ctf-tools:latest
+~~~
+
+Repeat with ctf-pwn, ctf-re, ctf-crypto, ctf-forensics, ctf-sage or ctf-mobile as
+needed. An absent local image must be built explicitly or downloaded/tagged before
+using it. Compose is only the image-build catalog; start the app with the native
+Windows/Linux launchers, not `docker compose up`.
+
+CI publishes latest plus short SHA tags, single-architecture linux/amd64, with
+provenance and SBOM attestations disabled. The cleanup guard inspects every tagged
+manifest and stops on indexes, attestations, unknown types or registry errors;
+retention keeps at least three tagged versions plus latest, and three untagged
+versions. The repository needs package Actions admin access for deletion.
+
+New GHCR packages default to private even for a public repository. Set the package
+visibility to public in GitHub if that is intended; it has not been changed by this
+local maintenance task. Verify current [GitHub billing documentation](https://docs.github.com/en/billing/concepts/product-billing/github-packages).
+Treat 500 MB private storage and 1 GB/month transfer as planning assumptions, not
+verified current limits. GITHUB_TOKEN-authenticated downloads inside GitHub Actions
+do not consume package transfer quota.

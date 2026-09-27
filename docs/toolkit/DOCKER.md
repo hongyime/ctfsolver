@@ -24,7 +24,7 @@
 
 ```bash
 # 拉取镜像
-docker pull bryan-ctf/ctftoolkit:latest
+docker pull the maintainer-ctf/ctftoolkit:latest
 
 # 运行容器
 docker run -it --rm \
@@ -325,3 +325,5 @@ docker-compose up -d --no-deps --force-recreate ctftoolkit
 ---
 
 **下一步**: 查看 [使用指南](./USAGE_GUIDE.md) 学习如何使用 CTF Toolkit
+
+Machine-specific values in this document use privacy placeholders.

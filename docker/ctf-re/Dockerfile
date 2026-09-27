@@ -1,5 +1,5 @@
 # docker/ctf-re/Dockerfile
-FROM python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203
+FROM python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS production
 
 LABEL description="CTF Reverse Engineering Tools - radare2, binwalk, and more"
 

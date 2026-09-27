@@ -51,16 +51,18 @@ export CTFTOOLKIT_DB_PATH CTFTOOLKIT_DOWNLOADS
 mkdir -p "$CTFTOOLKIT_WORKSPACE" "$CTFTOOLKIT_DOWNLOADS" "$ROOT/logs"
 
 if [ "${1:-}" = "--doctor" ]; then
-  uv run python scripts/doctor.py
+  shift
+  uv run python scripts/doctor.py "$@"
   exit $?
 fi
 
 if [ "${1:-}" = "--smoke" ]; then
+  shift
   if [ -f "$ROOT/scripts/mcp_smoke.py" ]; then
-    uv run python scripts/mcp_smoke.py
+    uv run python scripts/mcp_smoke.py "$@"
   else
     echo "No MCP smoke script found; running doctor instead."
-    uv run python scripts/doctor.py
+    uv run python scripts/doctor.py "$@"
   fi
   exit $?
 fi

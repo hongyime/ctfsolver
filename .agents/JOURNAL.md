@@ -7,3 +7,5 @@
 - No AGENTS.md present; only the synced template from sourcerepo is absent here.
 - Secret scan clean: .env gitignored and absent; .env.example has empty placeholders only.
 - 0 open PRs, 0 open issues. No action required.
+
+2026-09-27: Added read-only first-party helper source binds for existing forensic and Ghidra tool containers. Five isolated source-mount fixture tests passed without Docker. Warm Ghidra broker changes need a new session; no image build, target execution, deployment, commit or push.

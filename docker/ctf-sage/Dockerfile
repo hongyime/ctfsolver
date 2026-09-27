@@ -16,7 +16,7 @@
 #
 # Base is intentionally pinned to a concrete Sage release tag (NOT :latest) so the
 # warm/lazy build is reproducible across friends' clones. Bump deliberately.
-FROM sagemath/sagemath:10.4
+FROM sagemath/sagemath:10.4 AS production
 
 LABEL maintainer="CTF Toolkit"
 LABEL description="CTF SageMath image - algebra/number-theory/lattice solving for run_sage"

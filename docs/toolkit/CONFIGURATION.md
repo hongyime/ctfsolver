@@ -22,8 +22,8 @@ cp .env.example .env
 ### Example .env for WSL2
 
 ```bash
-CTFTOOLKIT_WORKSPACE=/home/bryan/ctftoolkit/workspace
-CTFTOOLKIT_DB_PATH=/home/bryan/ctftoolkit/ctf_state.db
+CTFTOOLKIT_WORKSPACE=<user-home>/ctftoolkit/workspace
+CTFTOOLKIT_DB_PATH=<user-home>/ctftoolkit/ctf_state.db
 CTFTOOLKIT_TIMEOUT=300
 CTFTOOLKIT_LOG_LEVEL=INFO
 CTFTOOLKIT_MAX_CONTAINERS=5
@@ -33,8 +33,8 @@ SHODAN_API_KEY=
 ### Example .env for Windows native
 
 ```bash
-CTFTOOLKIT_WORKSPACE=C:\Users\bryan\ctftoolkit\workspace
-CTFTOOLKIT_DB_PATH=C:\Users\bryan\ctftoolkit\ctf_state.db
+CTFTOOLKIT_WORKSPACE=<user-home>\ctftoolkit\workspace
+CTFTOOLKIT_DB_PATH=<user-home>\ctftoolkit\ctf_state.db
 CTFTOOLKIT_TIMEOUT=300
 CTFTOOLKIT_LOG_LEVEL=INFO
 CTFTOOLKIT_MAX_CONTAINERS=5
@@ -164,3 +164,5 @@ tail -f logs/ctf-toolkit.log
 python scripts/backup.py backup
 # Backups stored in backups/ directory, retained 7 days
 ```
+
+Machine-specific values in this document use privacy placeholders.

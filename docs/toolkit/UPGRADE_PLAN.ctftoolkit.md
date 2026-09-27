@@ -145,5 +145,7 @@ PyGhidra is the official bundled bridge (Ghidra 11.x, `pip install pyghidra`), b
 ## 7. Implementation environment (IMPORTANT)
 - **Run the implementation in an OpenCode session rooted at the `ctfsolver` repository**.
 - Reason: `glob`/`grep`/`lsp_diagnostics`/`edit`/`bash` are cwd-scoped; running from the CTF folder forces absolute-path gymnastics, gives no LSP on the toolkit's Python, and risks accidental writes into the unrelated GreyCTF competition folder.
-- The GreyCTF folder (`C:\Users\bryan\OneDrive\01 CTF\2026 GREYCTF`) is competition data and must NOT be touched by toolkit work.
+- The GreyCTF folder (`<user-home>\OneDrive\01 CTF\2026 GREYCTF`) is competition data and must NOT be touched by toolkit work.
 - This `UPGRADE_PLAN.md` lives in the toolkit repo, so a fresh toolkit-rooted session picks up seamlessly: read it, then start Phase 0.
+
+Machine-specific values in this document use privacy placeholders.

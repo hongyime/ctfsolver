@@ -111,7 +111,9 @@ async def ghidra_start(binary: str, mem_limit: str = MEM_LIMIT) -> dict:
     target = f"/workspace/{binary.lstrip('/')}"
 
     from .docker_runner import DockerRunner
-    volumes = DockerRunner()._prepare_volumes()
+    runner = DockerRunner()
+    volumes = runner._prepare_volumes()
+    volumes.update(runner._prepare_helper_volumes(RE_IMAGE))
     loop = asyncio.get_running_loop()
     try:
         container = await loop.run_in_executor(None, lambda: client.containers.run(

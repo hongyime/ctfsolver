@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from .dev_sources import USB_HELPER, helper_source_mounts
 from .registry import (
     derived_offline_tools as _derived_offline_tools,
     derived_tool_images as _derived_tool_images,
@@ -223,6 +224,12 @@ class DockerRunner:
                 volumes.update(platform_mounts)
             return volumes
     
+    def _prepare_helper_volumes(self, image: str) -> dict:
+        convert = None
+        if self.platform_info.platform == PlatformType.WINDOWS and not self.platform_info.wsl_available:
+            convert = self.platform_adapter.get_docker_volume_mount
+        return helper_source_mounts(image, _PROJECT_ROOT, convert)
+
     async def run_tool(
         self,
         tool_name: str,
@@ -321,6 +328,12 @@ class DockerRunner:
 
         # Prepare platform-aware volume mounts
         volumes = self._prepare_volumes()
+        helper_volumes = self._prepare_helper_volumes(image)
+        volumes.update(helper_volumes)
+        if sanitized_binary in ("usb_hid_extract", "/usr/local/bin/usb_hid_extract") and any(
+            mount["bind"] == USB_HELPER for mount in helper_volumes.values()
+        ):
+            cmd = ["python3", USB_HELPER] + sanitized_args
 
         # Phase 2: audit the execution with secrets masked (clank mask_command).
         try:
