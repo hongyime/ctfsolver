@@ -266,7 +266,7 @@ x-app-dev: &app-dev
   restart: "no"
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  environment:
+  environment: &app-environment
     HOME: /home/appuser
     PYTHONUTF8: "1"
     PYTHONDONTWRITEBYTECODE: "1"
@@ -287,6 +287,9 @@ x-app-dev: &app-dev
 services:
   dashboard:
     <<: *app-dev
+    environment:
+      <<: *app-environment
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
     ports:
       - "127.0.0.1:8501:8501"
     healthcheck:
