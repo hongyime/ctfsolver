@@ -1,5 +1,5 @@
 # CTF Toolkit - General Purpose Security Tools
-FROM kalilinux/kali-rolling:latest
+FROM kalilinux/kali-rolling:latest AS production
 
 LABEL maintainer="CTF Toolkit"
 LABEL description="General purpose security tools for CTF challenges"

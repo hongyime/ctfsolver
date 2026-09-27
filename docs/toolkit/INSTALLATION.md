@@ -461,7 +461,7 @@ Here is the full config with all options explained:
 
 **Important rules for paths:**
 - Always use absolute paths (starting with `/` on Linux/Mac or `C:\` on Windows)
-- On Windows, use double backslashes in JSON: `C:\\Users\\bryan\\ctftoolkit`
+- On Windows, use double backslashes in JSON: `<user-home>\\ctftoolkit`
 - The path passed to `uv --directory` must point to the root of the ctftoolkit directory (where `pyproject.toml` lives)
 
 > **Why `uv --directory` instead of `cwd`?** Several MCP clients (notably **Claude Code CLI**) silently strip the `cwd` field from MCP configs, which causes `uv run` to fail because it cannot find the project. Using `uv --directory <PATH>` puts the project root in the command itself, so it works in **every** MCP client (Claude Code, Claude Desktop, Cursor, opencode, Kiro, Windsurf, etc.).
@@ -705,3 +705,5 @@ Get a free key at [account.shodan.io](https://account.shodan.io/).
 ```
 
 This removes `.venv`, `ctf_state.db`, `workspace/`, `logs/`, `backups/`, and `metrics/`. Source code and Docker images are preserved.
+
+Machine-specific values in this document use privacy placeholders.

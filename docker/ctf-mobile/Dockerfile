@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS production
 
 LABEL description="CTF Mobile and Managed-Code Reverse Engineering Tools"
 

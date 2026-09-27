@@ -1,6 +1,6 @@
 # docker-compose.yml — build all CTF Toolkit images with one command.
 #
-#   docker compose build            # build the 5 core images (friend's first-run)
+#   docker compose build            # build the 5 core images (initial setup)
 #   docker compose build ctf-sage   # also build the heavy lazy-only SageMath image
 #   docker compose build ctf-mobile # also build optional mobile/managed-code tools
 #
@@ -17,30 +17,35 @@ services:
       context: .
       dockerfile: docker/ctf-tools/Dockerfile
     image: ctftoolkit/ctf-tools
+    pull_policy: never
 
   ctf-pwn:
     build:
       context: .
       dockerfile: docker/ctf-pwn/Dockerfile
     image: ctftoolkit/ctf-pwn
+    pull_policy: never
 
   ctf-re:
     build:
       context: .
       dockerfile: docker/ctf-re/Dockerfile
     image: ctftoolkit/ctf-re
+    pull_policy: never
 
   ctf-crypto:
     build:
       context: .
       dockerfile: docker/ctf-crypto/Dockerfile
     image: ctftoolkit/ctf-crypto
+    pull_policy: never
 
   ctf-forensics:
     build:
       context: .
       dockerfile: docker/ctf-forensics/Dockerfile
     image: ctftoolkit/ctf-forensics
+    pull_policy: never
 
   ctf-sage:
     profiles: ["heavy"]
@@ -48,6 +53,7 @@ services:
       context: .
       dockerfile: docker/ctf-sage/Dockerfile
     image: ctftoolkit/ctf-sage
+    pull_policy: never
 
   ctf-mobile:
     profiles: ["heavy"]
@@ -55,3 +61,4 @@ services:
       context: .
       dockerfile: docker/ctf-mobile/Dockerfile
     image: ctftoolkit/ctf-mobile
+    pull_policy: never

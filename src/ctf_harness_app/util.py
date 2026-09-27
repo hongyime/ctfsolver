@@ -53,7 +53,7 @@ def sanitize_folder_name(value: str, fallback: str = "challenge") -> str:
     """Turn a raw challenge name into a filesystem-safe folder name.
 
     Preserves spaces, letter case, and most punctuation so the layout matches
-    Bryan's manual `<YEAR> <CTF NAME>/<challenge>/` convention rather than
+    the local operator's manual `<YEAR> <CTF NAME>/<challenge>/` convention rather than
     lowercase-hyphen slug form. Strips only characters that Windows / most
     filesystems reject in path components.
     """
