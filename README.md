@@ -532,3 +532,79 @@ local maintenance task. Verify current [GitHub billing documentation](https://do
 Treat 500 MB private storage and 1 GB/month transfer as planning assumptions, not
 verified current limits. GITHUB_TOKEN-authenticated downloads inside GitHub Actions
 do not consume package transfer quota.
+
+
+## App containers with source synchronization
+
+The primary `docker-compose.yml` is a build catalog for seven tool images.
+`docker-compose.ctfsolver.yml` is a separate legacy app deployment. For dashboard
+and MCP development on Windows, Linux or an SMB checkout, use the explicit
+`compose.app-dev.yaml` with Docker Compose 2.32.2+:
+
+~~~sh
+# Initial setup, then only after dependency manifests/system packages change:
+docker compose --env-file /dev/null -f compose.app-dev.yaml build dashboard
+# Daily source edits synchronize into the same containers:
+docker compose --env-file /dev/null -f compose.app-dev.yaml up --no-build --pull never --watch
+~~~
+
+On Windows PowerShell replace `/dev/null` with `NUL`. Both commands use only the
+local dev image. Streamlit polls for Python source changes and reruns the page;
+the MCP watcher restarts its process. An active MCP connection/session must be
+reconnected after a process reload. Existing warm Ghidra/tool sessions do not
+magically reload broker code and require a new session. Source sync has no image
+rebuild rule. Dependencies live in `/opt/venv`, outside synchronized source.
+
+Open `http://127.0.0.1:8501`. The MCP backend shares the dashboard's network
+namespace and listens on its internal loopback interface, preserving the existing
+loopback-only HTTP guard. It is not published on the host. Health probes check the
+Streamlit health endpoint and MCP listener only; they execute no tool or session.
+
+This development route mounts no Docker socket, agent auth directory, host CTF
+workdir or environment file. Tool auto-build is disabled. Its separate named
+workspace/home volumes are for disposable development; real target execution,
+provider accounts and tool-image integration are not enabled by this setup.
+Ordinary application source, schemas and helper scripts are synchronized; private
+filenames and dependency manifests are excluded. The Compose client needs access
+to the checkout; the Docker daemon does not need an SMB source bind.
+The three root source files share one allowlisted root watch, avoiding duplicate
+parent-directory watches on Windows SMB. The six source directories retain
+separate rules so nested files participate in both initial sync and live edits;
+private files, generated dependencies and unrelated root files remain excluded.
+
+Stop watch with Ctrl+C, then remove this project's containers/networks while
+preserving development data:
+
+~~~sh
+docker compose --env-file /dev/null -f compose.app-dev.yaml down --remove-orphans
+~~~
+
+Use `NUL` in PowerShell. For disposable smoke tests, use a distinct
+`-p ctfsolver-app-smoke` for every command; only that disposable project's final
+teardown may add `--volumes`. Keep the cached dev image.
+
+The app's Dockerfile-specific ignore file includes the documentation assets that
+its existing image recipe copies, fixing the conflict with the toolkit's root
+ignore rules. Host-client `mcp*.json` files and private auth/runtime files are not
+packaged in the app image; configure host MCP clients separately. Their optional
+doctor/inventory checks are not a container runtime readiness gate.
+
+The legacy app Compose route is unchanged. Its MCP service currently passes a
+non-loopback host rejected by the existing HTTP entrypoint; this development
+route avoids that mismatch without weakening the guard. Review legacy deployment
+settings independently before using that route with real accounts or workspaces.
+
+The separate `docker-publish-app.yml` workflow publishes the app production target
+to `ghcr.io/hongyime/ctfsolver/app` with the same cache and manifest-aware retention
+guard as the seven tool packages. Those seven tool builds do not verify the app
+image. Dependency downloads are not retained in the image, and production starts
+the installed Streamlit executable without synchronizing dependencies. A manual
+workflow dispatch on an existing semver tag also publishes its version tag.
+Pull a production app image only with an explicit command:
+
+~~~sh
+docker pull ghcr.io/hongyime/ctfsolver/app:latest
+~~~
+
+Configuration and inert source-delivery checks do not establish full toolkit
+runtime, agent authentication, target analysis or provider/data health.

@@ -17,7 +17,7 @@
 #     -p 8501:8501 -p 8000:8000 \
 #     ctfsolver:latest
 
-FROM python:3.12-slim
+FROM python:3.12-slim AS dependencies
 
 # System deps: libmagic (python-magic on non-Windows), git for any VCS ops
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,7 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install uv — the project's package manager
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
+ENV PATH="/opt/venv/bin:/root/.cargo/bin:/root/.local/bin:${PATH}"
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV UV_LINK_MODE=copy
 
 WORKDIR /ctfsolver
 
@@ -36,21 +38,9 @@ WORKDIR /ctfsolver
 COPY pyproject.toml uv.lock ./
 
 # Sync deps (no dev group, no editable install)
-RUN uv sync --no-dev --frozen
+RUN uv sync --no-dev --frozen --no-cache
 
-# Copy the rest of the source
-COPY src/ ./src/
-COPY scripts/ ./scripts/
-COPY schema/ ./schema/
-COPY skills/ ./skills/
-COPY docker/ ./docker/
-COPY docs/ ./docs/
-COPY toolkit_manifest.json ./
-COPY streamlit_app.py main.py ./
-COPY mcp.json mcp-unix.json ./
-
-# Workspace placeholder — actual workdir is bind-mounted at runtime
-RUN mkdir -p /ctf-workdir /ctfsolver/logs
+RUN useradd -u 1000 -m appuser
 
 # Expose Streamlit dashboard and MCP HTTP backend
 EXPOSE 8501 8000
@@ -61,8 +51,35 @@ ENV PYTHONPATH=/ctfsolver/src
 ENV CTF_WORKDIR=/ctf-workdir
 ENV CTFTOOLKIT_WORKSPACE=/ctf-workdir
 
+FROM dependencies AS source
+# Application source is a dependency-cached snapshot; dev Watch supplies later edits.
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser scripts/ ./scripts/
+COPY --chown=appuser:appuser schema/ ./schema/
+COPY --chown=appuser:appuser skills/ ./skills/
+COPY --chown=appuser:appuser docker/ ./docker/
+COPY --chown=appuser:appuser docs/ ./docs/
+COPY --chown=appuser:appuser toolkit_manifest.json ./
+COPY --chown=appuser:appuser streamlit_app.py main.py ./
+
+# Workspace placeholder — actual workdir is bind-mounted at runtime
+RUN mkdir -p /ctf-workdir /ctfsolver/logs \
+    && chown -R appuser:appuser /ctf-workdir /ctfsolver
+
+
+
+FROM dependencies AS dev
+# Install dev dependencies before source so ordinary edits reuse this layer.
+RUN uv pip install --python /opt/venv/bin/python --no-cache watchfiles==1.3.0
+RUN mkdir -p /ctf-workdir && chown appuser:appuser /ctf-workdir /ctfsolver
+COPY --from=source --chown=appuser:appuser /ctfsolver /ctfsolver
+USER appuser
+ENV HOME=/home/appuser
+CMD ["streamlit", "run", "streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.fileWatcherType=poll", "--server.runOnSave=true"]
+
+FROM source AS production
 # Default: start the Streamlit dashboard
 # Override CMD to run the MCP backend instead:
-#   docker run ... ctfsolver:latest uv run python -m ctf_core.server
-CMD ["uv", "run", "streamlit", "run", "streamlit_app.py", \
+#   docker run ... ctfsolver:latest python -m ctf_core.server
+CMD ["streamlit", "run", "streamlit_app.py", \
      "--server.address=0.0.0.0", "--server.port=8501"]

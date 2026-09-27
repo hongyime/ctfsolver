@@ -13,3 +13,9 @@
 ## 2026-09-27: Restore PR labeler configuration
 
 Added the missing labels configuration referenced by the existing pull-request-target workflow. Its permissions and pinned action remain unchanged. The base-branch repair must merge before later PR runs can load the configuration.
+
+2026-09-27: Separate app dev/publisher route preserves the MCP loopback guard through a shared dev network namespace, keeps dependencies outside source, and avoids private host-client configs in the app image. Add a Dockerfile-specific ignore file so the existing docs COPY has valid inputs without changing toolkit build ignores.
+
+2026-09-27: Disable Streamlit browser usage statistics in the development dashboard environment; preserve MCP settings, production commands and image contents. Static parsing passes; runtime setting verification remains pending.
+
+2026-09-27: Consolidate the three root-file watches into one allowlisted root rule to avoid duplicate Windows SMB parent watches. Keep directory rules for nested initial sync, all private exclusions, telemetry opt-out and runtime settings unchanged. Static/matcher checks pass; actual SMB runtime validation remains separate.
