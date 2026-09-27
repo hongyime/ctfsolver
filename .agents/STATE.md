@@ -25,3 +25,7 @@ Baseline audit complete. No active development task in progress.
 ## Next Steps
 - No urgent work required
 - Consider adding AGENTS.md (currently missing from this repo)
+
+## 2026-09-27: Restore PR labeler configuration
+
+Added the missing labels configuration referenced by the existing pull-request-target workflow. Its permissions and pinned action remain unchanged. The base-branch repair must merge before later PR runs can load the configuration.
