@@ -7,3 +7,7 @@
 - No AGENTS.md present; only the synced template from sourcerepo is absent here.
 - Secret scan clean: .env gitignored and absent; .env.example has empty placeholders only.
 - 0 open PRs, 0 open issues. No action required.
+
+## 2026-09-27: Restore PR labeler configuration
+
+Added the missing labels configuration referenced by the existing pull-request-target workflow. Its permissions and pinned action remain unchanged. The base-branch repair must merge before later PR runs can load the configuration.
