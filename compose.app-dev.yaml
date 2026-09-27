@@ -1,0 +1,315 @@
+# Explicit app development only; the primary Compose file builds tool images.
+# Requires Docker Compose 2.32.2+. No auth directories or Docker socket are mounted.
+name: ctfsolver-app-dev
+x-app-watch: &app-watch
+  watch:
+    - action: sync
+      path: ./src
+      target: /ctfsolver/src
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./scripts
+      target: /ctfsolver/scripts
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./schema
+      target: /ctfsolver/schema
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./skills
+      target: /ctfsolver/skills
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./docker
+      target: /ctfsolver/docker
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./docs
+      target: /ctfsolver/docs
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./streamlit_app.py
+      target: /ctfsolver/streamlit_app.py
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./main.py
+      target: /ctfsolver/main.py
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+    - action: sync
+      path: ./toolkit_manifest.json
+      target: /ctfsolver/toolkit_manifest.json
+      initial_sync: true
+      ignore:
+        - "**/.[eE][nN][vV]*"
+        - "**/*[sS][eE][cC][rR][eE][tT]*"
+        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
+        - "**/*.[pP][eE][mM]"
+        - "**/*.[kK][eE][yY]"
+        - "**/*.[pP]12"
+        - "**/*.[pP][fF][xX]"
+        - "**/__pycache__/**"
+        - "**/*.py[cod]"
+        - "**/node_modules/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/.git/**"
+        - "**/.agents/**"
+        - "**/.pytest_cache/**"
+        - "**/requirements*.txt"
+        - "**/package*.json"
+        - "**/pyproject.toml"
+        - "**/uv.lock"
+        - "**/Dockerfile*"
+        - "**/mcp*.json"
+x-app-dev: &app-dev
+  image: ctfsolver-app-dev:local
+  pull_policy: never
+  build:
+    context: .
+    dockerfile: Dockerfile.ctfsolver
+    target: dev
+  init: true
+  restart: "no"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment:
+    HOME: /home/appuser
+    PYTHONUTF8: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONPATH: /ctfsolver/src
+    CTF_WORKDIR: /ctf-workdir
+    CTFTOOLKIT_WORKSPACE: /ctf-workdir
+    CTFTOOLKIT_DB_PATH: /ctf-workdir/ctf_state.db
+    CTFTOOLKIT_DOWNLOADS: /ctf-workdir/downloads
+    CTFTOOLKIT_AUTO_BUILD: "0"
+    CTF_HARNESS_START_AGENT_MCP: "0"
+    CTF_HARNESS_AGENT_MCP_URL: http://127.0.0.1:8000/mcp
+    WATCHFILES_FORCE_POLLING: "true"
+    WATCHFILES_POLL_DELAY_MS: "500"
+  volumes:
+    - dev_workspace:/ctf-workdir
+    - dev_home:/home/appuser
+  develop: *app-watch
+services:
+  dashboard:
+    <<: *app-dev
+    ports:
+      - "127.0.0.1:8501:8501"
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      start_period: 30s
+      retries: 6
+  mcp-backend:
+    <<: *app-dev
+    # The existing MCP HTTP entrypoint intentionally permits loopback only.
+    network_mode: service:dashboard
+    depends_on:
+      dashboard:
+        condition: service_started
+    command: [watchfiles, --target-type, command, "python scripts/mcp_http.py --host 127.0.0.1 --port 8000 --path /mcp", /ctfsolver/src, /ctfsolver/scripts, /ctfsolver/schema, /ctfsolver/skills, /ctfsolver/docker, /ctfsolver/docs, /ctfsolver/streamlit_app.py, /ctfsolver/main.py, /ctfsolver/toolkit_manifest.json]
+    healthcheck:
+      # Listener readiness only; this does not execute an MCP tool/session.
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=5).close()"]
+      interval: 10s
+      timeout: 6s
+      start_period: 30s
+      retries: 6
+volumes:
+  dev_workspace:
+  dev_home:

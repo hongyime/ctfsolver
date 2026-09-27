@@ -31,3 +31,5 @@ Baseline audit complete. No active development task in progress.
 ## 2026-09-27: Restore PR labeler configuration
 
 Added the missing labels configuration referenced by the existing pull-request-target workflow. Its permissions and pinned action remain unchanged. The base-branch repair must merge before later PR runs can load the configuration.
+
+2026-09-27: Prepared standalone app development with sync-only source delivery, Streamlit polling and explicit MCP process/session restart behavior. No Docker socket/auth mounts or real workdir are used. App publication is separate from the seven tool images; config parsing and inert smoke do not establish tool runtime. Legacy app MCP non-loopback mismatch remains documented.
