@@ -171,67 +171,16 @@ x-app-watch: &app-watch
         - "**/uv.lock"
         - "**/Dockerfile*"
         - "**/mcp*.json"
+    # One root watch avoids duplicate parent registrations on Windows SMB.
     - action: sync
-      path: ./streamlit_app.py
-      target: /ctfsolver/streamlit_app.py
+      path: .
+      target: /ctfsolver
       initial_sync: true
       ignore:
-        - "**/.[eE][nN][vV]*"
-        - "**/*[sS][eE][cC][rR][eE][tT]*"
-        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
-        - "**/*.[pP][eE][mM]"
-        - "**/*.[kK][eE][yY]"
-        - "**/*.[pP]12"
-        - "**/*.[pP][fF][xX]"
-        - "**/__pycache__/**"
-        - "**/*.py[cod]"
-        - "**/node_modules/**"
-        - "**/.venv/**"
-        - "**/venv/**"
-        - "**/dist/**"
-        - "**/build/**"
-        - "**/.git/**"
-        - "**/.agents/**"
-        - "**/.pytest_cache/**"
-        - "**/requirements*.txt"
-        - "**/package*.json"
-        - "**/pyproject.toml"
-        - "**/uv.lock"
-        - "**/Dockerfile*"
-        - "**/mcp*.json"
-    - action: sync
-      path: ./main.py
-      target: /ctfsolver/main.py
-      initial_sync: true
-      ignore:
-        - "**/.[eE][nN][vV]*"
-        - "**/*[sS][eE][cC][rR][eE][tT]*"
-        - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"
-        - "**/*.[pP][eE][mM]"
-        - "**/*.[kK][eE][yY]"
-        - "**/*.[pP]12"
-        - "**/*.[pP][fF][xX]"
-        - "**/__pycache__/**"
-        - "**/*.py[cod]"
-        - "**/node_modules/**"
-        - "**/.venv/**"
-        - "**/venv/**"
-        - "**/dist/**"
-        - "**/build/**"
-        - "**/.git/**"
-        - "**/.agents/**"
-        - "**/.pytest_cache/**"
-        - "**/requirements*.txt"
-        - "**/package*.json"
-        - "**/pyproject.toml"
-        - "**/uv.lock"
-        - "**/Dockerfile*"
-        - "**/mcp*.json"
-    - action: sync
-      path: ./toolkit_manifest.json
-      target: /ctfsolver/toolkit_manifest.json
-      initial_sync: true
-      ignore:
+        - "**"
+        - "!streamlit_app.py"
+        - "!main.py"
+        - "!toolkit_manifest.json"
         - "**/.[eE][nN][vV]*"
         - "**/*[sS][eE][cC][rR][eE][tT]*"
         - "**/*[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]*"

@@ -39,3 +39,9 @@ Added the missing labels configuration referenced by the existing pull-request-t
 Disable Streamlit browser usage statistics in the app development Compose dashboard.
 The explicit setting needs no image rebuild; static Compose validation passes.
 Runtime verification of the effective Streamlit setting remains pending.
+
+## 2026-09-27 — SMB app source watch
+
+Keep six directory sync rules and one allowlisted root-file rule per service.
+Native matcher checks cover initial/live source delivery and private exclusions;
+the bounded SMB runtime check remains pending. No image rebuild is required.

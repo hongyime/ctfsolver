@@ -567,6 +567,10 @@ provider accounts and tool-image integration are not enabled by this setup.
 Ordinary application source, schemas and helper scripts are synchronized; private
 filenames and dependency manifests are excluded. The Compose client needs access
 to the checkout; the Docker daemon does not need an SMB source bind.
+The three root source files share one allowlisted root watch, avoiding duplicate
+parent-directory watches on Windows SMB. The six source directories retain
+separate rules so nested files participate in both initial sync and live edits;
+private files, generated dependencies and unrelated root files remain excluded.
 
 Stop watch with Ctrl+C, then remove this project's containers/networks while
 preserving development data:
