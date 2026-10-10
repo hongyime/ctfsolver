@@ -45,3 +45,15 @@ Runtime verification of the effective Streamlit setting remains pending.
 Keep six directory sync rules and one allowlisted root-file rule per service.
 Native matcher checks cover initial/live source delivery and private exclusions;
 the bounded SMB runtime check remains pending. No image rebuild is required.
+<!-- MOLT_AUTO_START -->
+## Auto State
+
+- Updated: 2026-09-21 08:30:28 +08:00
+- Machine: PRAWN-T14
+- Harness: claude
+- Event: stop
+- Branch: main
+- HEAD: 24dcd50
+- Dirty files: 2
+- Resume hint: Read .agents/STATE.md, then the latest file in .agents/handoffs/ if present.
+<!-- MOLT_AUTO_END -->
